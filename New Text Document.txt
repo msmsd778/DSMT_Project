@@ -1,0 +1,9 @@
+limit broadcasting just for admin
+delete message
+delete group message
+delete group member
+define admins for groups (optional)
+seen/unseen messages
+showing online status for others
+send voice
+set profile picture
