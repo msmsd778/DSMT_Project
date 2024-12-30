@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Edit Message</h2>
+<form method="POST">
+    <div class="form-group">
+        <label for="msg_id">Message ID:</label>
+        <input type="text" class="form-control" id="msg_id" name="msg_id" required>
+    </div>
+    <div class="form-group">
+        <label for="new_text">New Text:</label>
+        <textarea class="form-control" id="new_text" name="new_text" rows="3" required></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Edit Message</button>
+</form>
+{% endblock %}

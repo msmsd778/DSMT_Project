@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Search Users</h2>
+<form method="GET">
+    <div class="form-group">
+        <label for="q">Search Query:</label>
+        <input type="text" class="form-control" id="q" name="q" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Search</button>
+</form>
+
+{% if request.args.get('q') %}
+    <h3 class="mt-4">Search Results:</h3>
+    {% if response.ok %}
+        {% if response.ok %}
+            <ul class="list-group">
+                {% for user in response.ok %}
+                    <li class="list-group-item">
+                        <strong>{{ user.user_id }}</strong> - {{ user.display_name }}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No users found matching your query.</p>
+        {% endif %}
+    {% else %}
+        <p>Error: {{ response.error }}</p>
+    {% endif %}
+{% endif %}
+<a href="{{ url_for('dashboard') }}" class="btn btn-secondary mt-3">Back to Dashboard</a>
+{% endblock %}

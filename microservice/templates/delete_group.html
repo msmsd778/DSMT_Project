@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Delete Group</h2>
+<form method="POST">
+    <div class="form-group">
+        <label for="group_id">Group ID:</label>
+        <input type="text" class="form-control" id="group_id" name="group_id" required>
+    </div>
+    <button type="submit" class="btn btn-danger">Delete Group</button>
+</form>
+{% endblock %}
