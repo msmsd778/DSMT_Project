@@ -1,0 +1,100 @@
+<!-- templates/change_info.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Change Information</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2rem;
+        }
+        h2 {
+            color: #333;
+        }
+        form {
+            margin-bottom: 2rem;
+        }
+        label {
+            display: block;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        input[type="password"],
+        input[type="file"] {
+            width: 100%;
+            padding: 0.5rem;
+            box-sizing: border-box;
+        }
+        button {
+            margin-top: 1rem;
+            padding: 0.7rem 1.5rem;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .message {
+            margin-top: 1rem;
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .back-button {
+            margin-top: 2rem;
+            background-color: red;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Change Your Information</h2>
+    
+    <!-- Display Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="message {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Change Password Form -->
+    <h3>Change Password</h3>
+    <form action="/change_password" method="POST">
+        <label for="current_password">Current Password:</label>
+        <input type="password" id="current_password" name="current_password" required>
+
+        <label for="new_password">New Password:</label>
+        <input type="password" id="new_password" name="new_password" required>
+
+        <label for="confirm_password">Confirm New Password:</label>
+        <input type="password" id="confirm_password" name="confirm_password" required>
+
+        <button type="submit">Change Password</button>
+    </form>
+    
+    <hr/>
+    
+    <!-- Change Profile Picture Form -->
+    <h3>Change Profile Picture</h3>
+    <form action="/change_profile_picture" method="POST" enctype="multipart/form-data">
+        <label for="profile_picture">Select New Profile Picture:</label>
+        <input type="file" id="profile_picture" name="profile_picture" accept="image/*" required>
+
+        <button type="submit">Upload Profile Picture</button>
+    </form>
+    
+    <hr/>
+    
+    <button class="back-button" onclick="window.location.href='/dashboard'">Back to Dashboard</button>
+
+</body>
+</html>

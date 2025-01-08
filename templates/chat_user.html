@@ -1,0 +1,506 @@
+<!-- templates/chat_user.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat with {{ other_user }}</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f2f2f2;
+    }
+    .chat-container {
+      border: 1px solid #ccc;
+      width: 60%;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 1rem;
+      background-color: #fff;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    .chat-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 0.5rem;
+    }
+    .chat-header img {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      margin-right: 1rem;
+      object-fit: cover;
+    }
+    .chat-header h2 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+    .chat-header .status {
+      margin-left: 1rem;
+      font-size: 0.9rem;
+      color: #555; /* Default color; updated via JS */
+    }
+    #messages-area {
+      height: 400px;
+      overflow-y: scroll;
+      padding: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #fafafa;
+    }
+    .message {
+      padding: 0.8rem 1.2rem;
+      margin-bottom: 0.8rem;
+      border-radius: 20px;
+      max-width: 80%;
+      clear: both;
+      position: relative;
+      word-wrap: break-word;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      font-size: 1rem;
+    }
+    .message.mine {
+      background-color: #dcf8c6;
+      float: right;
+      text-align: right;
+    }
+    .message.other {
+      background-color: #fff;
+      float: left;
+      text-align: left;
+      border: 1px solid #ddd;
+    }
+    .timestamp {
+      font-size: 0.8rem;
+      color: #999;
+      display: block;
+      margin-top: 0.3rem;
+    }
+    .read-receipt {
+      font-size: 0.8rem;
+      color: #999;
+      margin-left: 0.5rem;
+    }
+    .delete-btn {
+      position: absolute;
+      bottom: -3px;
+      right: 10px;
+      background: none;
+      border: none;
+      color: red;
+      cursor: pointer;
+      font-size: 0.8rem;
+      outline: none;
+    }
+    .clear {
+      clear: both;
+    }
+    #sendForm {
+      display: flex;
+      margin-top: 1rem;
+    }
+    #msgInput {
+      flex: 1;
+      padding: 0.5rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #sendBtn {
+      padding: 0.5rem 1rem;
+      margin-left: 0.5rem;
+      font-size: 1rem;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #sendBtn:hover {
+      background-color: #45a049;
+    }
+    #backBtn {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      background-color: #f44336;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #backBtn:hover {
+      background-color: #da190b;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <!-- Header -->
+    <div class="chat-header">
+      {% if other_user_profile %}
+        <img src="{{ other_user_profile }}" alt="Profile Picture" />
+      {% else %}
+        <img src="/static/default_profile.png" alt="No Profile Picture" />
+      {% endif %}
+      <div>
+        <h2>{{ other_user }}</h2>
+        <!-- Status will be dynamically updated -->
+        <span class="status">
+          {% if other_user_status == "online" %}
+            Online
+          {% elif other_user_status.startswith("last seen") %}
+            {{ other_user_status }}
+          {% else %}
+            Status unavailable
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages-area">
+      {% for msg in messages %}
+        {% set isMine = (msg.sender == username) %}
+        <div class="message {% if isMine %}mine{% else %}other{% endif %}">
+          {{ msg.message }}
+          <span class="timestamp">
+            {% set msg_time = msg.timestamp %}
+            {% set msg_datetime = msg_time | to_datetime %}
+            {% set now = "now" | to_datetime %}
+            {% set diff = now - msg_datetime %}
+            {% if diff.total_seconds() < 86400 %}
+              {{ msg_datetime.strftime("%H:%M") }}
+            {% else %}
+              {{ msg_datetime.strftime("%d %b %Y, %H:%M") }}
+            {% endif %}
+          </span>
+          {% if isMine %}
+            {% if other_user in msg.read_by %}
+              <span class="read-receipt">✔✔</span>
+            {% else %}
+              <span class="read-receipt">✔</span>
+            {% endif %}
+            <button class="delete-btn" onclick="deleteMessage('{{ msg._id }}')">delete</button>
+          {% endif %}
+        </div>
+        <div class="clear"></div>
+      {% endfor %}
+    </div>
+
+    <!-- Send New Message -->
+    <form id="sendForm" onsubmit="return sendMessage();">
+      <input type="text" id="msgInput" placeholder="Type a message..." required />
+      <button type="submit" id="sendBtn">Send</button>
+    </form>
+
+    <!-- Back to Dashboard -->
+    <button id="backBtn" onclick="window.location.href='/dashboard'">Back to Dashboard</button>
+  </div>
+
+  <script>
+    let token = "{{ session['token'] }}";
+    const otherUser = "{{ other_user }}";
+    let refreshInProgress = false;
+
+    // Function to refresh token on the client if we get a 401
+    function refreshToken() {
+      if (refreshInProgress) {
+        // Already refreshing, don't call again
+        return Promise.resolve();
+      }
+      refreshInProgress = true;
+
+      return fetch("/refresh_token", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ token: token })
+      })
+      .then(resp => {
+        if (resp.status === 429) {  // Too Many Requests
+          throw new Error("429");
+        }
+        return resp.json();
+      })
+      .then(data => {
+        if (data.token) {
+          token = data.token; // Update our global token variable
+          console.log("Token refreshed on client side:", token);
+          // Update Flask session with the new token
+          return fetch("/update_token", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ token: token })
+          })
+          .then(resp => resp.json())
+          .then(updateData => {
+            if (updateData.error) {
+              console.error("Failed to update token in session:", updateData.error);
+            } else {
+              console.log("Token updated in Flask session.");
+            }
+          });
+        } else {
+          console.error("Token refresh failed:", data);
+        }
+      })
+      .catch(err => {
+        console.error("refreshToken error:", err);
+      })
+      .finally(() => {
+        refreshInProgress = false;
+      });
+    }
+
+    // Function to fetch messages with fallback for 401
+    function refreshMessages() {
+      fetch(`/get_messages?token=${encodeURIComponent(token)}&other_user=${encodeURIComponent(otherUser)}`)
+        .then(response => {
+          if(response.status === 401) {
+            // Token likely expired => refresh it
+            throw new Error("401");
+          }
+          return response.json();
+        })
+        .then(data => {
+          if(data.error){
+            console.error("Error fetching messages:", data.error);
+            return;
+          }
+          renderMessages(data.messages || []);
+        })
+        .catch(error => {
+          if(error.message === "401") {
+            // 1) Refresh the token, then 2) re-fetch messages
+            refreshToken().then(() => refreshMessages());
+          } else {
+            console.error("refreshMessages error:", error);
+          }
+        });
+    }
+
+    // Function to delete a message with fallback for 401
+    function deleteMessage(msgId) {
+      fetch("/delete_message", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          token: token,
+          message_id: msgId,
+          delete_for_both: false
+        })
+      })
+      .then(resp => {
+        if(resp.status === 401) {
+          throw new Error("401");
+        }
+        return resp.json();
+      })
+      .then(data => {
+        if(data.error){
+          alert("Error deleting message: " + data.error);
+        }
+        refreshMessages(); // Re-fetch messages after deletion
+      })
+      .catch(err => {
+        if(err.message === "401") {
+          refreshToken().then(() => deleteMessage(msgId));
+        } else {
+          console.error("deleteMessage error:", err);
+        }
+      });
+    }
+
+    // Send a new message
+    function sendMessage() {
+      const msgInput = document.getElementById('msgInput');
+      const msgText = msgInput.value.trim();
+      if(!msgText) return false;
+
+      fetch("/send_message", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          token: token,
+          receiver: otherUser,
+          message: msgText
+        })
+      })
+      .then(response => {
+        if(response.status === 401){
+          throw new Error("401");
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log("send_message response:", data);
+        if(data.error){
+          alert("Error sending message: " + data.error);
+        }
+        msgInput.value = "";
+        // Refresh messages
+        refreshMessages();
+      })
+      .catch(err => {
+        if(err.message === "401") {
+          refreshToken().then(() => sendMessage());
+        } else {
+          console.error("send_message error:", err);
+          alert("Failed to send message.");
+        }
+      });
+
+      return false; // prevent form from redirecting
+    }
+
+    // Render messages in the messages-area
+    function renderMessages(messages) {
+      const container = document.getElementById('messages-area');
+      container.innerHTML = "";
+
+      messages.forEach(msg => {
+        const isMine = (msg.sender === "{{ username }}");
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message');
+        messageDiv.classList.add(isMine ? 'mine' : 'other');
+
+        // Message text
+        const messageText = document.createElement('span');
+        messageText.textContent = msg.message;
+        messageDiv.appendChild(messageText);
+
+        // Timestamp
+        const tsSpan = document.createElement('span');
+        tsSpan.classList.add('timestamp');
+        const msgDate = new Date(msg.timestamp);
+        const now = new Date();
+        const diffMs = now - msgDate;
+        const oneDayMs = 24 * 60 * 60 * 1000;
+
+        let formattedTime = "";
+        if(diffMs < oneDayMs){
+          // show HH:MM
+          formattedTime = msgDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        } else {
+          // show DD Mon YYYY, HH:MM
+          formattedTime = msgDate.toLocaleDateString([], {day: '2-digit', month: 'short', year: 'numeric'}) + ", " +
+                          msgDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+        tsSpan.textContent = " " + formattedTime;
+        messageDiv.appendChild(tsSpan);
+
+        // Read receipts
+        if(isMine){
+          const readReceipt = document.createElement('span');
+          readReceipt.classList.add('read-receipt');
+          if(msg.read_by.includes(otherUser)){
+            readReceipt.textContent = "✔✔";
+          } else {
+            readReceipt.textContent = "✔";
+          }
+          messageDiv.appendChild(readReceipt);
+        }
+
+        // Delete button for own messages
+        if(isMine){
+          const delBtn = document.createElement('button');
+          delBtn.classList.add('delete-btn');
+          delBtn.textContent = "delete";
+          delBtn.onclick = () => deleteMessage(msg._id);
+          messageDiv.appendChild(delBtn);
+        }
+
+        // Clear floats
+        const clearDiv = document.createElement('div');
+        clearDiv.classList.add('clear');
+
+        container.appendChild(messageDiv);
+        container.appendChild(clearDiv);
+      });
+
+      // Scroll to the bottom
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // ========= 1) Poll the user's status just like messages =========
+    function refreshUserStatus() {
+      fetch(`/get_user_status?token=${encodeURIComponent(token)}&username=${encodeURIComponent(otherUser)}`)
+        .then(response => {
+          if (response.status === 401) {
+            throw new Error("401");
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data.error) {
+            console.error("Error fetching user status:", data.error);
+            return;
+          }
+          updateStatusUI(data);
+        })
+        .catch(err => {
+          if (err.message === "401") {
+            // If token expired, refresh it and retry
+            refreshToken().then(() => refreshUserStatus());
+          } else {
+            console.error("refreshUserStatus error:", err);
+          }
+        });
+    }
+
+    // ========= 2) Update the DOM with the status info =========
+    function updateStatusUI(statusData) {
+      const statusSpan = document.querySelector(".chat-header .status");
+      if (!statusData || !statusData.status) {
+        statusSpan.textContent = "Status unavailable";
+        statusSpan.style.color = "#555";
+        return;
+      }
+
+      if (statusData.status === "online") {
+        // Online
+        statusSpan.textContent = "Online";
+        statusSpan.style.color = "green";
+      } else {
+        // Offline => display "last seen ..."
+        let lastOnline = statusData.last_online;
+        if (!lastOnline || lastOnline === "Never") {
+          statusSpan.textContent = "Offline";
+          statusSpan.style.color = "gray";
+        } else {
+          // Same day-vs-24hr logic used for messages
+          const dt = new Date(lastOnline);
+          const now = new Date();
+          const diffMs = now - dt;
+          const oneDayMs = 24 * 60 * 60 * 1000;
+
+          let displayTime = "";
+          if (diffMs < oneDayMs) {
+            // show HH:MM
+            displayTime = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } else {
+            // show DD Mon YYYY, HH:MM
+            displayTime = dt.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })
+                        + ", "
+                        + dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          }
+          statusSpan.textContent = "last seen " + displayTime;
+          statusSpan.style.color = "gray";
+        }
+      }
+    }
+
+    // ========= 3) Kick off a timer for status, in addition to messages =========
+    setInterval(refreshMessages, 5000); // poll messages every 5s
+    setInterval(refreshUserStatus, 5000); // poll status every 5s
+
+    // Initial load
+    document.addEventListener('DOMContentLoaded', () => {
+      refreshMessages();
+      refreshUserStatus(); // also load the user's status once at startup
+    });
+  </script>
+</body>
+</html>

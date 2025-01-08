@@ -2,10 +2,11 @@
 -export([init/0, broadcast_message/1, propagate_registration/1, handle_incoming_message/2,
          register_user/2, login_user/2, send_message/2, get_messages/1, create_group/2,
          delete_group/1, add_user_to_group/2, send_group_message/2, delete_message/2,
-         stop_node/0, logout_user/0, delete_group_message/2, fetch_and_display_group_messages/1,
+         stop_node/0, logout_user/2, delete_group_message/2, fetch_and_display_group_messages/1,
          remove_user_from_group/2, replace_session/2, refresh_token/0, get_group_messages/1,
          get_chat_partners/0, get_user_groups/0, get_user_status/1, handle_logout/1,
-         upload_profile_picture/0, get_profile_picture/1, handle_group_deletion/1]).
+         upload_profile_picture/0, get_profile_picture/1, handle_group_deletion/1,
+         get_current_user_token/0]).
 
 -define(ACTIVE_NODES, active_nodes).
 -define(ACTIVE_USERS, active_users).
@@ -83,25 +84,29 @@ register_user(Username, Password) when is_binary(Username), is_binary(Password) 
     end.
 
 refresh_token_loop() ->
+    %% Wait for 1 minutes before the first refresh
+    timer:sleep(1 * 60 * 1000), %% 1 minutes
     case refresh_token() of
         {ok, _NewToken} ->
-            %% Wait for 6 minutes before refreshing again
-            timer:sleep(6 * 60 * 1000), %% 6 minutes
             refresh_token_loop();
         {error, Reason} ->
             io:format("Failed to refresh token: ~s~n", [Reason]),
-            %% Retry after 6 minutes even if refresh fails
-            timer:sleep(6 * 60 * 1000),
+            %% Retry after 1 minutes even if refresh fails
+            timer:sleep(1 * 60 * 1000),
             refresh_token_loop()
     end.
+
 
 
 %% Terminate the refresh_token_loop process for a given user
 terminate_refresh_loop(Username) when is_binary(Username) ->
     case ets:lookup(?ACTIVE_SESSIONS, Username) of
-        [{Username, _Token, RefreshPid}] ->
+        [{Username, _Token, RefreshPid}] when is_pid(RefreshPid) ->
             exit(RefreshPid, kill),
             io:format("Token refresh loop terminated for user ~s.~n", [binary_to_list(Username)]),
+            ok;
+        [{Username, _Token, _RefreshPid}] ->
+            io:format("No valid RefreshPid for user ~s.~n", [binary_to_list(Username)]),
             ok;
         _ ->
             ok
@@ -152,20 +157,18 @@ refresh_token() ->
     end.
 
 
-%% Replace the session token for a given Username with NewToken.
-%% Also updates the CURRENT_SESSION table to reflect the current user.
 replace_session(Username, NewToken) when is_binary(Username), is_binary(NewToken) ->
     case ets:lookup(?ACTIVE_SESSIONS, Username) of
-        [{Username, _OldToken, RefreshPid}] ->
-            %% Update the token in ACTIVE_SESSIONS without spawning a new loop
-            ets:insert(?ACTIVE_SESSIONS, {Username, NewToken, RefreshPid}),
-            %% Update the CURRENT_SESSION table
+        [{Username, _OldToken, _OldPid}] ->
+            %% Just update the token; no refresh loop needed
+            ets:insert(?ACTIVE_SESSIONS, {Username, NewToken, undefined}),
             ets:delete(?CURRENT_SESSION, <<"current_user">>),
             ets:insert(?CURRENT_SESSION, {<<"current_user">>, Username}),
             io:format("Session token replaced for user ~s.~n", [binary_to_list(Username)]),
             ok;
         _ ->
-            io:format("Failed to replace session token for user ~s: Invalid session data.~n", [binary_to_list(Username)]),
+            io:format("Failed to replace session token for user ~s: Invalid session data.~n",
+                      [binary_to_list(Username)]),
             {error, "Invalid session data."}
     end.
 
@@ -173,109 +176,95 @@ replace_session(Username, NewToken) when is_binary(Username), is_binary(NewToken
 login_user(Username, Password) when is_list(Username), is_list(Password) ->
     BinaryUsername = list_to_binary(Username),
     BinaryPassword = list_to_binary(Password),
+    NodeName = list_to_binary(atom_to_list(node())),
     case get_current_user() of
-        {ok, ExistingUsername} ->
-            io:format("Cannot login as ~s. User ~s is already logged in. Please logout first.~n", 
-                      [Username, ExistingUsername]),
+        {ok, ExistingUser} ->
             {error, "A user is already logged in. Please logout first."};
         {error, _Reason} ->
             ensure_inets_started(),
             URL = "http://localhost:5000/login",
-
-            %% Construct JSON payload
             Payload = #{
                 <<"username">> => BinaryUsername,
-                <<"password">> => BinaryPassword
+                <<"password">> => BinaryPassword,
+                <<"node_name">> => NodeName
             },
             JSON = iolist_to_binary(jsx:encode(Payload)),
-
             Headers = [{"Content-Type", "application/json"}],
 
-            %% Make HTTP POST request
             case http_request(post, URL, Headers, JSON) of
                 {ok, Body} ->
                     JsonMap = jsx:decode(Body, [return_maps]),
                     Token = maps:get(<<"token">>, JsonMap, undefined),
                     if
                         Token =/= undefined ->
-                            io:format("Login successful for user ~s.~n", [BinaryUsername]),
-                            %% Spawn the refresh token loop and capture its PID
-                            RefreshPid = spawn(fun refresh_token_loop/0),
-                            %% Insert {Username, Token, RefreshPid} into ACTIVE_SESSIONS
-                            ets:insert(?ACTIVE_SESSIONS, {BinaryUsername, Token, RefreshPid}),
-                            %% Update CURRENT_SESSION
+                            io:format("Login successful for user ~s.~n", [binary_to_list(BinaryUsername)]),
+                            %% **NEW: Remove existing session before inserting a new one**
+                            ets:delete_all_objects(?ACTIVE_SESSIONS),
+                            %% Insert the new session
+                            ets:insert(?ACTIVE_SESSIONS, {BinaryUsername, Token, undefined}),
                             ets:delete_all_objects(?CURRENT_SESSION),
                             ets:insert(?CURRENT_SESSION, {<<"current_user">>, BinaryUsername}),
-                            io:format("Current user set to ~s after login.~n", [BinaryUsername]),
+                            io:format("Current user set to ~s after login.~n", [binary_to_list(BinaryUsername)]),
                             {ok, Token};
                         true ->
-                            io:format("Token not found in response for user ~s.~n", [BinaryUsername]),
+                            io:format("Token not found in response for user ~s.~n", [binary_to_list(BinaryUsername)]),
                             {error, "Invalid response from server."}
                     end;
                 {error, Reason} ->
-                    io:format("HTTP request failed while logging in user ~s: ~p~n", [BinaryUsername, Reason]),
+                    io:format("HTTP request failed while logging in user ~s: ~p~n",
+                              [binary_to_list(BinaryUsername), Reason]),
                     {error, Reason}
             end
     end.
 
 
-%% Logout the current user
-logout_user() ->
-    %% Ensure the CURRENT_SESSION ETS table exists
-    case ets:info(?CURRENT_SESSION) of
-        undefined ->
-            io:format("ETS table ~p does not exist. Please call init/0 first.~n", [?CURRENT_SESSION]),
-            {error, "ETS table not initialized. Call init/0 first."};
+%% Make the 0-arg logout_user() just call the 2-arg version with the correct token
+logout_user(Username, Token) when is_list(Username), is_list(Token) ->
+    logout_user(list_to_binary(Username), list_to_binary(Token));
+logout_user(Username, Token) when is_binary(Username), is_binary(Token) ->
+    io:format("logout_user/2 called for ~p with token ~p~n", [Username, Token]),
+
+    %% 1) Check if ETS sees that user (with correct or mismatched token)
+    case ets:lookup(?ACTIVE_SESSIONS, Username) of
+        [{Username, TokenStored, RefreshPid}] ->
+            if TokenStored =/= Token ->
+                io:format("Provided token ~s doesn't match stored ~s. Force-logout anyway.~n",
+                          [binary_to_list(Token), binary_to_list(TokenStored)]);
+               true ->
+                ok
+            end,
+            terminate_refresh_loop(Username),
+            ets:delete(?ACTIVE_SESSIONS, Username),
+            io:format("Removed ~p from ACTIVE_SESSIONS.~n", [Username]);
+
         _ ->
-            case get_current_user() of
-                {ok, Username} ->
-                    case get_user_token(Username) of
-                        {ok, Token} ->
-                            URL = "http://localhost:5000/logout",
-                            
-                            %% Construct JSON payload using jsx and convert to binary
-                            Payload = #{
-                                <<"token">> => Token
-                            },
-                            JSON = iolist_to_binary(jsx:encode(Payload)),
-                            
-                            Headers = [{"Content-Type", "application/json"}],
-                            
-                            %% Make HTTP POST request
-                            case http_request(post, URL, Headers, JSON) of
-                                {ok, Body} ->
-                                    %% Decode JSON response
-                                    JsonMap = jsx:decode(Body, [return_maps]),
-                                    Message = maps:get(<<"message">>, JsonMap, <<"Failed to logout.">>),
-                                    %% Always treat message as binary
-                                    case Message of
-                                        <<"Logged out successfully.">> ->
-                                            %% Remove user token and current_user from ETS
-                                            ets:delete(?CURRENT_SESSION, <<"current_user">>),
-                                            ets:delete(?ACTIVE_SESSIONS, Username),
-                                            io:format("User ~s logged out successfully.~n", [binary_to_list(Username)]),
-                                            %% Terminate the refresh_token_loop process
-                                            terminate_refresh_loop(Username),
-                                            %% Propagate logout to all nodes
-                                            propagate_logout(Username),
-                                            {ok, "Logout successful."};
-                                        _ErrorMessage ->
-                                            io:format("Failed to logout: ~s~n", [binary_to_list(Message)]),
-                                            {error, "Failed to logout."}
-                                    end;
-                                {error, Reason} ->
-                                    io:format("Failed to logout: ~s~n", [Reason]),
-                                    {error, Reason}
-                            end;
-                        {error, Reason} ->
-                            io:format("No user token found for ~s: ~s~n", [binary_to_list(Username), Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot logout: ~s~n", [Reason]),
-                    {error, Reason}
-            end
-    end.
+            io:format("No active session found in ETS for ~p.~n", [Username])
+    end,
+
+    %% 2) Clear CURRENT_SESSION if it's them
+    case ets:lookup(?CURRENT_SESSION, <<"current_user">>) of
+        [{<<"current_user">>, Username}] ->
+            ets:delete(?CURRENT_SESSION, <<"current_user">>),
+            io:format("Cleared CURRENT_SESSION for ~p.~n", [Username]);
+        _ ->
+            ok
+    end,
+
+    %% 3) Call Python /logout to remove DB session and set user offline
+    Payload = iolist_to_binary(jsx:encode(#{<<"token">> => Token})),
+    Headers = [{"Content-Type", "application/json"}],
+    case http_request(post, "http://localhost:5000/logout", Headers, Payload) of
+        {ok, Body} ->
+            io:format("Python logout response: ~s~n", [binary_to_list(Body)]);
+        {error, Reason} ->
+            io:format("Failed to call Python /logout: ~p~n", [Reason])
+    end,
+
+    %% 4) Propagate logout to ALL connected nodes
+    propagate_logout(Username),
+
+    {ok, "Logout successful in Erlang."}.
+
 
 
 %% Handle logout on remote nodes
@@ -432,41 +421,20 @@ send_message(Receiver, Message) when is_binary(Receiver), is_binary(Message) ->
     end.
 
 
-%% Process individual one-to-one message for display
-process_one_to_one_message(Msg, CurrentUser) ->
-    Sender = maps:get(<<"sender">>, Msg, <<"">>),
-    Receiver = maps:get(<<"receiver">>, Msg, <<"">>),
-    Message = maps:get(<<"message">>, Msg, <<"">>),
-    Timestamp = maps:get(<<"timestamp">>, Msg, <<"">>),
-    ReadBy = maps:get(<<"read_by">>, Msg, []),
+%% Process individual one-to-one message for display (for erlang shells)
+process_one_to_one_message(Msg, _CurrentUser) ->
+    Sender    = maps:get(<<"sender">>,   Msg, <<"">>),
+    Receiver  = maps:get(<<"receiver">>, Msg, <<"">>),
+    Message   = maps:get(<<"message">>,  Msg, <<"">>),
+    Timestamp = maps:get(<<"timestamp">>,Msg, <<"">>),
 
-    %% Determine if the current user sent the message
-    Sent = Sender == CurrentUser,
-
-    %% If sent by current user, show read receipts
-    ReadStatus = if
-        Sent ->
-            case ReadBy of
-                [] -> <<"Not Read">>;
-                _ ->
-                    %% Convert each binary in ReadBy to list, join with ", ", then back to binary
-                    ReadByList = [binary_to_list(User) || User <- ReadBy],
-                    ReadByString = string:join(ReadByList, ", "),
-                    %% Note the '/binary' type specifier for inserting binary data directly
-                    ReadByBinary = list_to_binary(ReadByString),
-                    <<"Read by: ", ReadByBinary/binary>>
-            end;
-        true ->
-            <<>>
-    end,
-
-    %% Return processed message as a map
-    #{<<"sender">> => Sender,
-      <<"receiver">> => Receiver,
-      <<"message">> => Message,
-      <<"timestamp">> => Timestamp,
-      <<"sent">> => Sent,
-      <<"read_status">> => ReadStatus}.
+    %% Return only the essential fields
+    #{
+      <<"sender">>    => Sender,
+      <<"receiver">>  => Receiver,
+      <<"message">>   => Message,
+      <<"timestamp">> => Timestamp
+    }.
 
 
 %% Fetch messages between current user and another user

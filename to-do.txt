@@ -2,30 +2,21 @@ Add back button for chat pages (done)
 show profile pictures on dashboard (done)
 logout button on dashboard doesn't redirect to the login page in the first place. (done)
 Create group option on dashboard (done)
+show profile picture on the chat page (done)
+Make the chat pages update without refreshing (done)
+
 
 
 Find new people to chat with using search via username on dashboard
-
-show profile picture on the chat page
 
 show the group members below "chat with groupname"
 
 For group owners, add and remove users from the group. (add by search via username)
 
-On group chat, if message was sent and nobody has read it use on check sign. If at least on group members other than the current user has read the message, that bubble should have a dropdown with an arrow-down icon and when the user clicks on it they should see which users have seen the message. this is specific to the messages that the user themselves has sent not other messages.
-
-both private and group chat pages should have their own right-click menu. on the menu the user should be able edit and delete their messages.
-
 send message button is not working. The sent message should be appeared immediately with a check sign.
-
-Make the chat pages update without refreshing. (optional)
 
 Add the message editing logic.
 
 Add sending voice logic.
 
 Add sending file logic.
-
-
-
-the ux should be like before. user should be able to register and auto logged in to their dashboard. In the dashboard they should see the list of other users and groups that have chat with before. they should be able to search other users by their username to start a new conversation. they should see create group and change user info buttons. the chat pages should be shown like before. Also don't forget about the profile pictures on the dashboard and chat pages.

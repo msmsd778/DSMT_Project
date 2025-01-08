@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f9;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 1rem;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    h2 {
+      text-align: center;
+      color: #555;
+    }
+
+    .profile {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .profile img {
+      border-radius: 50%;
+      border: 2px solid #ddd;
+      width: 60px;
+      height: 60px;
+    }
+
+    .action-buttons {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .action-buttons button {
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 0.7rem 1.5rem;
+      margin: 0.5rem;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+
+    .action-buttons button:hover {
+      background-color: #0056b3;
+    }
+
+    .tabs {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 1rem;
+    }
+
+    .tab {
+      cursor: pointer;
+      padding: 0.7rem 1.5rem;
+      border-radius: 5px 5px 0 0;
+      background-color: #ddd;
+      margin: 0 0.2rem;
+      font-weight: bold;
+      color: #555;
+    }
+
+    .tab.active {
+      background-color: #007bff;
+      color: #fff;
+    }
+
+    .tab-content {
+      display: none;
+      border-top: 2px solid #007bff;
+      background: #f9f9f9;
+      padding: 1rem;
+      border-radius: 0 0 8px 8px;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    ul {
+      list-style-type: none;
+      padding: 0;
+    }
+
+    ul li {
+      margin: 0.5rem 0;
+      padding: 0.5rem;
+      background: #f0f0f0;
+      border-radius: 5px;
+    }
+
+    ul li a {
+      text-decoration: none;
+      color: 007bff;
+      font-weight: bold;
+    }
+
+    ul li a:hover {
+      text-decoration: underline;
+    }
+    #logout {
+      background-color: rgb(255, 0, 0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="profile">
+      <img src="{{ user_profile_url }}" alt="Your Profile" />
+    </div>
+    <h2>Welcome, {{ username }}!</h2>
+
+    <div class="action-buttons">
+      <button id=logout onclick="window.location.href='/logout_local'">Logout</button>
+      <button onclick="window.location.href='/change_info'">Change Information</button>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" id="privateTabButton">Private Chats</div>
+      <div class="tab" id="groupTabButton">Group Chats</div>
+    </div>
+
+    <div class="tab-content active" id="privateTabContent">
+      <h3>Your Chat Partners</h3>
+      <ul>
+        {% for partner in chat_partners %}
+          <li>
+            <a href="/chat/{{ partner }}">{{ partner }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="tab-content" id="groupTabContent">
+      <h3>Your Groups</h3>
+      <ul>
+        {% for group in group_names %}
+          <li>
+            <a href="#TODO_ChatGroup_{{ group }}">{{ group }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    // Simple tab logic
+    const privateTabButton = document.getElementById("privateTabButton");
+    const groupTabButton = document.getElementById("groupTabButton");
+    const privateTabContent = document.getElementById("privateTabContent");
+    const groupTabContent = document.getElementById("groupTabContent");
+
+    function showTab(tabName) {
+      privateTabButton.classList.remove("active");
+      groupTabButton.classList.remove("active");
+      privateTabContent.classList.remove("active");
+      groupTabContent.classList.remove("active");
+
+      if (tabName === "private") {
+        privateTabButton.classList.add("active");
+        privateTabContent.classList.add("active");
+      } else {
+        groupTabButton.classList.add("active");
+        groupTabContent.classList.add("active");
+      }
+    }
+
+    // Initialize default tab
+    showTab("private");
+
+    privateTabButton.addEventListener("click", () => showTab("private"));
+    groupTabButton.addEventListener("click", () => showTab("group"));
+  </script>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!-- Updated templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>D-Messenger Demo</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f0f2f5;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 20px;
+      background-color: #fff;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      border-radius: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .section {
+      flex: 1 1 400px;
+      padding: 20px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      background-color: #fafafa;
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+
+    h2 {
+      margin-top: 0;
+      color: #555;
+    }
+
+    form {
+      display: flex;
+      flex-direction: column;
+    }
+
+    label {
+      margin-bottom: 5px;
+      color: #555;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="file"] {
+      padding: 10px;
+      margin-bottom: 15px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1rem;
+    }
+
+    button {
+      padding: 10px;
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .flash-messages {
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
+    .flash {
+      padding: 10px 15px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-size: 0.9rem;
+    }
+
+    .flash-error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .flash-success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    @media (max-width: 800px) {
+      .container {
+        flex-direction: column;
+        margin: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="section" style="flex: 1 1 100%;">
+      <h1>D-Messenger</h1>
+      {% if is_logged_in %}
+        <h2>You are already logged in as <strong>{{ username }}</strong></h2>
+        <div class="action-buttons" style="text-align: center; margin-top: 20px;">
+          <button onclick="window.location.href='/dashboard'">Go to Dashboard</button>
+          <button onclick="window.location.href='/logout_local'">Logout</button>
+        </div>
+      {% else %}
+        <!-- Flash Messages -->
+        <div class="flash-messages">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div class="flash {% if category == 'error' %}flash-error{% elif category == 'success' %}flash-success{% endif %}">
+                  {{ message }}
+                </div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+        </div>
+
+        <div style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-between;">
+          <!-- Registration Form -->
+          <div class="section">
+            <h2>Register</h2>
+            <form action="/register_via_erlang" method="POST" enctype="multipart/form-data" novalidate>
+              <label for="reg_nodeName">Erlang Node Name <span style="color: red;">*</span>:</label>
+              <input type="text" id="reg_nodeName" name="reg_nodeName" value="node1@Asus-k571gt" required />
+
+              <label for="reg_username">Username <span style="color: red;">*</span>:</label>
+              <input type="text" id="reg_username" name="reg_username" required />
+
+              <label for="reg_password">Password <span style="color: red;">*</span>:</label>
+              <input type="password" id="reg_password" name="reg_password" required />
+
+              <label for="reg_profile_pic">Profile Picture (Optional):</label>
+              <input type="file" id="reg_profile_pic" name="reg_profile_pic" accept="image/*" />
+
+              <button type="submit">Register</button>
+            </form>
+          </div>
+
+          <!-- Login Form -->
+          <div class="section">
+            <h2>Login</h2>
+            <form action="/login_via_erlang" method="POST" novalidate>
+              <label for="login_nodeName">Erlang Node Name <span style="color: red;">*</span>:</label>
+              <input type="text" id="login_nodeName" name="login_nodeName" value="node1@Asus-k571gt" required />
+
+              <label for="login_username">Username <span style="color: red;">*</span>:</label>
+              <input type="text" id="login_username" name="login_username" required />
+
+              <label for="login_password">Password <span style="color: red;">*</span>:</label>
+              <input type="password" id="login_password" name="login_password" required />
+
+              <button type="submit">Login</button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
