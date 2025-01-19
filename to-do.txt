@@ -1,22 +1,3 @@
-Add back button for chat pages (done)
-show profile pictures on dashboard (done)
-logout button on dashboard doesn't redirect to the login page in the first place. (done)
-Create group option on dashboard (done)
-show profile picture on the chat page (done)
-Make the chat pages update without refreshing (done)
-
-
-
-Find new people to chat with using search via username on dashboard
-
-show the group members below "chat with groupname"
-
-For group owners, add and remove users from the group. (add by search via username)
-
-send message button is not working. The sent message should be appeared immediately with a check sign.
-
-Add the message editing logic.
-
 Add sending voice logic.
 
 Add sending file logic.

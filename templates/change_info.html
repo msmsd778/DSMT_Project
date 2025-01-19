@@ -2,99 +2,218 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Change Information</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 2rem;
-        }
-        h2 {
-            color: #333;
-        }
-        form {
-            margin-bottom: 2rem;
-        }
-        label {
-            display: block;
-            margin-top: 1rem;
-            margin-bottom: 0.5rem;
-        }
-        input[type="password"],
-        input[type="file"] {
-            width: 100%;
-            padding: 0.5rem;
-            box-sizing: border-box;
-        }
-        button {
-            margin-top: 1rem;
-            padding: 0.7rem 1.5rem;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-        .message {
-            margin-top: 1rem;
-            padding: 0.5rem;
-            border-radius: 4px;
-        }
-        .success {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        .error {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        .back-button {
-            margin-top: 2rem;
-            background-color: red;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Change Information</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f9f9f9;
+    }
+    .top-bar {
+      display: flex;
+      align-items: center;
+      background: #eee;
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid #ccc;
+    }
+    .back-btn {
+      background: none;
+      color: black;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      margin-right: 1rem;
+    }
+    .title {
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 1rem auto;
+      background: #fff;
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    h2 {
+      margin-top: 0;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin-bottom: 0.3rem;
+    }
+    input[type="password"],
+    input[type="file"] {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 0.5rem;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    hr {
+      margin: 1.5rem 0;
+    }
+    #statusMessage {
+      margin-top: 1rem;
+      font-weight: bold;
+      text-align: center;
+    }
+  </style>
 </head>
 <body>
 
-    <h2>Change Your Information</h2>
-    
-    <!-- Display Flash Messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="message {{ category }}">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
+<div class="top-bar">
+  <!-- back arrow to dashboard -->
+  <button class="back-btn" onclick="window.location.href='/dashboard'">&larr;</button>
+  <div class="title">Change Info</div>
+</div>
 
-    <!-- Change Password Form -->
+<div class="container">
+  <h2>Update Your Info</h2>
+
+  <!-- Change Password Section -->
+  <div>
     <h3>Change Password</h3>
-    <form action="/change_password" method="POST">
-        <label for="current_password">Current Password:</label>
-        <input type="password" id="current_password" name="current_password" required>
+    <div class="form-group">
+      <label for="oldPass">Current Password</label>
+      <input type="password" id="oldPass" />
+    </div>
+    <div class="form-group">
+      <label for="newPass">New Password</label>
+      <input type="password" id="newPass" />
+    </div>
+    <div class="form-group">
+      <label for="confirmPass">Confirm New Password</label>
+      <input type="password" id="confirmPass" />
+    </div>
+    <button onclick="handleChangePassword()">Change Password</button>
+  </div>
 
-        <label for="new_password">New Password:</label>
-        <input type="password" id="new_password" name="new_password" required>
+  <hr/>
 
-        <label for="confirm_password">Confirm New Password:</label>
-        <input type="password" id="confirm_password" name="confirm_password" required>
-
-        <button type="submit">Change Password</button>
-    </form>
-    
-    <hr/>
-    
-    <!-- Change Profile Picture Form -->
+  <!-- Change Profile Picture -->
+  <div>
     <h3>Change Profile Picture</h3>
-    <form action="/change_profile_picture" method="POST" enctype="multipart/form-data">
-        <label for="profile_picture">Select New Profile Picture:</label>
-        <input type="file" id="profile_picture" name="profile_picture" accept="image/*" required>
+    <div class="form-group">
+      <label for="profilePic">Select a new picture:</label>
+      <input type="file" id="profilePic" accept="image/*"/>
+    </div>
+    <button onclick="handleChangeProfilePic()">Update Picture</button>
+  </div>
 
-        <button type="submit">Upload Profile Picture</button>
-    </form>
-    
-    <hr/>
-    
-    <button class="back-button" onclick="window.location.href='/dashboard'">Back to Dashboard</button>
+  <div id="statusMessage"></div>
+</div>
 
+<script>
+  let token = "{{ session['token'] if session['token'] else '' }}";
+  let nodeName = {{ node_name | tojson | safe }};
+
+  function handleChangePassword() {
+    const oldP = document.getElementById("oldPass").value.trim();
+    const newP = document.getElementById("newPass").value.trim();
+    const conf = document.getElementById("confirmPass").value.trim();
+    const msgDiv = document.getElementById("statusMessage");
+    msgDiv.textContent = "";
+    msgDiv.style.color = "red";
+
+    if (!oldP || !newP || !conf) {
+      msgDiv.textContent = "All fields are required.";
+      return;
+    }
+    if (newP !== conf) {
+      msgDiv.textContent = "New passwords do not match!";
+      return;
+    }
+
+    // We'll do a FormData POST => /change_password_via_erlang
+    const formData = new FormData();
+    formData.append("node_name", nodeName);
+    formData.append("token", token);
+    formData.append("old_password", oldP);
+    formData.append("new_password", newP);
+
+    fetch("/change_password_via_erlang", {
+      method: "POST",
+      body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        msgDiv.textContent = "Error: " + data.error;
+      } else {
+        msgDiv.style.color = "green";
+        msgDiv.textContent = data.message || "Password changed successfully!";
+      }
+    })
+    .catch(err => {
+      msgDiv.textContent = "Failed: " + err;
+    });
+  }
+
+  function handleChangeProfilePic() {
+    const fileInput = document.getElementById("profilePic");
+    const msgDiv = document.getElementById("statusMessage");
+    msgDiv.textContent = "";
+    msgDiv.style.color = "red";
+  
+    if (!fileInput.files[0]) {
+      msgDiv.textContent = "Please select a file first.";
+      return;
+    }
+    const file = fileInput.files[0];
+    const extension = file.name.split(".").pop().toLowerCase();
+  
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      let base64data = e.target.result;
+      // Remove the prefix: e.g., data:image/png;base64,
+      base64data = base64data.split(",")[1].replace(/\s/g, "").trim();
+  
+      const formData = new FormData();
+      formData.append("node_name", nodeName);
+      formData.append("token", token);
+      formData.append("image_data", base64data);
+      formData.append("extension", extension);
+  
+      fetch("/set_profile_picture_via_erlang", {
+        method: "POST",
+        body: formData
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          msgDiv.textContent = "Error: " + data.error;
+        } else {
+          msgDiv.style.color = "green";
+          msgDiv.textContent = data.message || "Profile picture updated!";
+        }
+      })
+      .catch(err => {
+        msgDiv.textContent = "Failed: " + err;
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+</script>
 </body>
 </html>

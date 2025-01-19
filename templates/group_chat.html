@@ -1,0 +1,776 @@
+<!-- templates/group_chat.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Group Chat: {{ group_name }}</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f2f2f2;
+      margin: 0;
+      padding: 0;
+    }
+    .chat-container {
+      border: 1px solid #ccc;
+      width: 60%;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 1rem;
+      background-color: #fff;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    .chat-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 0.5rem;
+      justify-content: space-between;
+    }
+    .chat-title {
+      display: flex;
+      flex-direction: column;
+    }
+    .chat-title h2 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+    .chat-members {
+      font-size: 0.9rem;
+      color: #555;
+      margin-top: 0.3rem;
+    }
+    #membersCount {
+      font-size: 0.9rem;
+      color: #777;
+    }
+    .actions-area {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    /* Owner Search / Add/Remove */
+    .owner-controls {
+      display: none; /* Shown if isOwner = true */
+      flex-direction: column;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+    }
+    .owner-controls label {
+      font-weight: bold;
+      margin-bottom: 0.3rem;
+    }
+    #searchUserInput {
+      padding: 0.3rem;
+      width: 200px;
+    }
+    #suggestions {
+      position: relative;
+      background-color: #f9f9f9;
+      border: 1px solid #ccc;
+      max-height: 120px;
+      overflow-y: auto;
+      display: none; /* Hidden until we have suggestions */
+    }
+    .suggestion-item {
+      padding: 0.3rem;
+      cursor: pointer;
+    }
+    .suggestion-item:hover {
+      background-color: #eee;
+    }
+
+    .leave-group-btn {
+      background-color: #f44336;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 0.5rem 0.8rem;
+      cursor: pointer;
+    }
+    .leave-group-btn:hover {
+      background-color: #d32f2f;
+    }
+    #ownerSelectContainer {
+      display: none; /* Hidden until the current owner tries to leave */
+      align-items: center;
+      gap: 0.5rem;
+    }
+    #messages-area {
+      height: 400px;
+      overflow-y: scroll;
+      padding: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #fafafa;
+      margin-bottom: 1rem;
+    }
+    .message {
+      padding: 0.8rem 1.2rem;
+      margin-bottom: 0.8rem;
+      border-radius: 20px;
+      max-width: 80%;
+      clear: both;
+      position: relative;
+      word-wrap: break-word;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      font-size: 1rem;
+    }
+    .message.mine {
+      background-color: #dcf8c6;
+      float: right;
+      text-align: right;
+    }
+    .message.other {
+      background-color: #fff;
+      float: left;
+      text-align: left;
+      border: 1px solid #ddd;
+    }
+    /* Sender name on top of the message if it's NOT mine */
+    .sender-name {
+      font-weight: bold;
+      margin-bottom: 0.3rem;
+    }
+    .timestamp {
+      font-size: 0.8rem;
+      color: #999;
+      display: block;
+      margin-top: 0.3rem;
+    }
+    .delete-btn {
+      position: absolute;
+      bottom: -3px;
+      right: 10px;
+      background: none;
+      border: none;
+      color: red;
+      cursor: pointer;
+      font-size: 0.8rem;
+      outline: none;
+    }
+    .clear {
+      clear: both;
+    }
+    #sendForm {
+      display: flex;
+    }
+    #msgInput {
+      flex: 1;
+      padding: 0.5rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #sendBtn {
+      padding: 0.5rem 1rem;
+      margin-left: 0.5rem;
+      font-size: 1rem;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #sendBtn:hover {
+      background-color: #45a049;
+    }
+    /* Red button to go back to Dashboard */
+    .back-dashboard-btn {
+      background-color: red;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      margin-top: 1rem;
+    }
+    .back-dashboard-btn:hover {
+      background-color: darkred;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <!-- Header Section -->
+    <div class="chat-header">
+      <div class="chat-title">
+        <h2>{{ group_name }}</h2>
+        <!-- List the members plus count -->
+        <div class="chat-members" id="membersList">
+          Members:
+          {% for member in members %}
+            {% if member == owner %}
+              {{ member }} (owner)
+            {% else %}
+              {{ member }}
+            {% endif %}
+            {% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </div>
+        <div id="membersCount">Total: {{ members|length }}</div>
+      </div>
+      <!-- Actions: Leave Group, Possibly Choose New Owner -->
+      <div class="actions-area">
+        <div id="ownerSelectContainer">
+          <label for="newOwnerSelect">Select New Owner:</label>
+          <select id="newOwnerSelect"></select>
+        </div>
+        <button class="leave-group-btn" onclick="leaveGroup()">Leave Group</button>
+      </div>
+    </div>
+
+    <!-- Owner Controls: Search & Add/Remove Users -->
+    <div class="owner-controls" id="ownerControls">
+      <label for="searchUserInput">Search Username:</label>
+      <input type="text" id="searchUserInput" placeholder="Type to search..." autocomplete="off" />
+      <div id="suggestions"></div>
+    </div>
+
+    <!-- MESSAGES -->
+    <div id="messages-area">
+      {% set now_datetime = now_utc|to_datetime %}
+      {% for msg in messages %}
+        {% set isMine = (msg.sender == username) %}
+        <div 
+          class="message {% if isMine %}mine{% else %}other{% endif %}" 
+          id="msg_{{ msg._id }}"
+          title="{% if msg.read_by|length > 0 %}Seen by: {{ msg.read_by|join(', ') }}{% else %}Not seen yet{% endif %}"
+        >
+          {% if not isMine %}
+            <!-- Show sender name if it's not my message -->
+            <div class="sender-name">
+              {{ msg.sender }}{% if msg.sender == owner %} (owner){% endif %}
+            </div>
+          {% endif %}
+          {{ msg.message }}
+          
+          <!-- Timestamp logic -->
+          <span class="timestamp">
+            {% set msg_dt = msg.timestamp|to_datetime %}
+            {% if msg_dt and now_datetime %}
+              {% set diff = now_datetime - msg_dt %}
+              {% if diff.total_seconds() < 86400 %}
+                {{ msg_dt.strftime("%H:%M") }}
+              {% else %}
+                {{ msg_dt.strftime("%d %b %Y, %H:%M") }}
+              {% endif %}
+            {% else %}
+              N/A
+            {% endif %}
+          </span>
+
+          <!-- If I'm the sender or I'm the group owner, show delete button -->
+          {% if isMine or owner == username %}
+            <button class="delete-btn" onclick="deleteGroupMessage('{{ msg._id }}')">delete</button>
+          {% endif %}
+        </div>
+        <div class="clear"></div>
+      {% endfor %}
+    </div>
+
+    <!-- Send New Message -->
+    <form id="sendForm" onsubmit="return sendMessage();">
+      <input type="text" id="msgInput" placeholder="Type a message..." required />
+      <button type="submit" id="sendBtn">Send</button>
+    </form>
+
+    <!-- A red "Back to Dashboard" button at the bottom -->
+    <button class="back-dashboard-btn" onclick="window.location.href='/dashboard'">Back to Dashboard</button>
+  </div>
+
+  <script>
+    // =========== GLOBAL VARIABLES ============
+    // Safely serialize server-side variables into JavaScript using the tojson filter
+    let token = {{ session['token']|tojson }};
+    let username = {{ username|tojson }};
+    let groupName = {{ group_name|tojson }};
+    let owner = {{ owner|tojson }};
+    let isOwner = (owner === username);
+    let groupMembers = {{ members|tojson }};
+    let refreshInProgress = false;
+
+    // Show the owner controls if the user is the owner
+    const ownerControlsDiv = document.getElementById('ownerControls');
+    if(isOwner){
+      ownerControlsDiv.style.display = "flex";
+    }
+
+    // =========== Searching Users + Toggling Membership ===========
+  const searchInput = document.getElementById("searchUserInput");
+  const suggestionsDiv = document.getElementById("suggestions");
+
+  // Listen to each keystroke in the search input
+  searchInput.addEventListener("input", () => {
+    const partial = searchInput.value.trim();
+    if (!partial) {
+      // If empty input, hide suggestions
+      suggestionsDiv.style.display = "none";
+      suggestionsDiv.innerHTML = "";
+      return;
+    }
+
+    // Call our Flask endpoint: /search_users?query=partial
+    fetch(`/search_users?query=${encodeURIComponent(partial)}`)
+      .then(resp => {
+        if (resp.status === 401) {
+          throw new Error("401");  // Token might be invalid/expired
+        }
+        return resp.json();
+      })
+      .then(data => {
+        if (data.error) {
+          console.error("Error searching users:", data.error);
+          suggestionsDiv.style.display = "none";
+          return;
+        }
+        // If no results, handle gracefully
+        const foundUsers = data.users || [];
+        if (foundUsers.length === 0) {
+          suggestionsDiv.innerHTML = "<div class='suggestion-item'>No matches</div>";
+          suggestionsDiv.style.display = "block";
+        } else {
+          // Clear and rebuild suggestions
+          suggestionsDiv.innerHTML = "";
+          foundUsers.forEach(u => {
+            const inGroup = groupMembers.includes(u); 
+            // "Remove X" if in group, "Add X" if not
+            const item = document.createElement("div");
+            item.classList.add("suggestion-item");
+            item.textContent = (inGroup ? "Remove " : "Add ") + u;
+
+            // On click => toggle membership
+            item.onclick = () => toggleMembership(u, inGroup);
+
+            suggestionsDiv.appendChild(item);
+          });
+          suggestionsDiv.style.display = "block";
+        }
+      })
+      .catch(err => {
+        if (err.message === "401") {
+          // If token expired, refresh, then re-run
+          refreshToken().then(() => {
+            searchInput.dispatchEvent(new Event("input")); 
+            // Re-dispatch the event to continue searching
+          });
+        } else {
+          console.error("search_users error:", err);
+        }
+      });
+  });
+
+  // This function adds or removes a user from the group
+  function toggleMembership(targetUser, alreadyInGroup) {
+    // Decide which endpoint to call
+    const endpoint = alreadyInGroup ? "/remove_user_from_group" : "/add_user_to_group";
+    fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: token,
+        group_name: groupName,
+        username: targetUser
+      })
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.error) {
+        alert(data.error); 
+      } else {
+        // Update group membership on success
+        console.log(data.message);
+        fetchGroupMembers();  // We can re-fetch members to update UI
+      }
+      // Clear the search box and suggestions
+      searchInput.value = "";
+      suggestionsDiv.innerHTML = "";
+      suggestionsDiv.style.display = "none";
+    })
+    .catch(err => console.error("toggleMembership error:", err));
+  }
+
+  // =========== Real-Time Group Membership Updates ===========
+  // You already have the fetchGroupMessages() poll, 
+  // so let's also poll membership if you want an auto-update
+
+  function fetchGroupMembers() {
+    fetch(`/get_group_members?token=${encodeURIComponent(token)}&group_name=${encodeURIComponent(groupName)}`)
+      .then(resp => {
+        if (resp.status === 401) {
+          throw new Error("401");
+        }
+        return resp.json();
+      })
+      .then(data => {
+        if (data.error) {
+          console.error("Error fetching group members:", data.error);
+          return;
+        }
+        groupMembers = data.members;         // update the global array
+        owner = data.owner;                 // new owner if changed
+        isOwner = (owner === username);     // might also update your UI
+        updateMembersUI();
+      })
+      .catch(err => {
+        if (err.message === "401") {
+          refreshToken().then(() => fetchGroupMembers());
+        } else {
+          console.error("fetchGroupMembers error:", err);
+        }
+      });
+  }
+
+  function updateMembersUI() {
+    // Rebuild the top "Members: ..." list
+    const membersListEl = document.getElementById("membersList");
+    const membersCountEl = document.getElementById("membersCount");
+    membersListEl.innerHTML = "Members: ";
+
+    groupMembers.forEach((m, index) => {
+      if (m === owner) {
+        membersListEl.innerHTML += `${m} (owner)`;
+      } else {
+        membersListEl.innerHTML += m;
+      }
+      if (index < groupMembers.length - 1) {
+        membersListEl.innerHTML += ", ";
+      }
+    });
+    membersCountEl.textContent = `Total: ${groupMembers.length}`;
+
+    // Show/hide owner controls if user is or isn't the owner
+    const ocDiv = document.getElementById("ownerControls");
+    ocDiv.style.display = isOwner ? "flex" : "none";
+  }
+
+    // =========== REFRESH TOKEN FUNCTION ============
+    function refreshToken() {
+      if (refreshInProgress) return Promise.resolve();
+      refreshInProgress = true;
+
+      return fetch("/refresh_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token })
+      })
+      .then(resp => resp.json())
+      .then(data => {
+        if (data.token) {
+          token = data.token;
+          console.log("Token refreshed on client side:", token);
+          // Update in Flask session
+          return fetch("/update_token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: token })
+          }).then(r => r.json()).then(updateData => {
+            if (updateData.error) {
+              console.error("Failed to update token in session:", updateData.error);
+            } else {
+              console.log("Token updated in Flask session.");
+            }
+          });
+        } else {
+          console.warn("Token refresh failed:", data);
+        }
+      })
+      .catch(err => {
+        console.error("Error refreshing token:", err);
+      })
+      .finally(() => {
+        refreshInProgress = false;
+      });
+    }
+
+    // =========== FETCH GROUP MESSAGES ============
+    function fetchGroupMessages() {
+      fetch(`/get_group_messages?token=${encodeURIComponent(token)}&group_name=${encodeURIComponent(groupName)}`)
+        .then(resp => {
+          if (resp.status === 401) {
+            throw new Error("401");
+          }
+          return resp.json();
+        })
+        .then(data => {
+          if (data.error) {
+            console.error("Error fetching group messages:", data.error);
+            return;
+          }
+          console.log("Fetched group messages:", data.group_messages); // Debugging line
+          renderMessages(data.group_messages || []);
+        })
+        .catch(err => {
+          if (err.message === "401") {
+            refreshToken().then(() => fetchGroupMessages());
+          } else {
+            console.error("fetchGroupMessages error:", err);
+          }
+        });
+    }
+
+    // =========== RENDER MESSAGES FUNCTION ============
+    function renderMessages(messages) {
+      const container = document.getElementById("messages-area");
+      container.innerHTML = ""; // Clear existing messages
+
+      const now = new Date(); // Current time for timestamp calculations
+
+      messages.forEach(msg => {
+        const isMine = (msg.sender === username); // Check if the message is sent by the current user
+        const canDelete = isMine || (owner === username); // Determine if the delete button should be shown
+
+        // Create the message bubble
+        const msgDiv = document.createElement("div");
+        msgDiv.classList.add("message");
+        msgDiv.id = `msg_${msg._id}`; // Assign a unique ID to each message
+
+        // Add appropriate classes based on the sender
+        if (isMine) {
+          msgDiv.classList.add("mine");
+        } else {
+          msgDiv.classList.add("other");
+        }
+
+        // If the message is sent by someone else, display the sender's name
+        if (!isMine) {
+          const senderNameDiv = document.createElement("div");
+          senderNameDiv.classList.add("sender-name");
+          senderNameDiv.textContent = msg.sender;
+          
+          // Append "(owner)" if the sender is the group owner
+          if (msg.sender === owner) {
+            senderNameDiv.textContent += " (owner)";
+          }
+
+          msgDiv.appendChild(senderNameDiv);
+        }
+
+        // Add the message text
+        const messageText = document.createElement("span");
+        messageText.textContent = msg.message;
+        msgDiv.appendChild(messageText);
+
+        // Format and add the timestamp
+        const tsSpan = document.createElement("span");
+        tsSpan.classList.add("timestamp");
+        const msgDate = new Date(msg.timestamp);
+        let formattedTime = "N/A";
+
+        if (!isNaN(msgDate.getTime())) { // Check if the timestamp is valid
+          const diffMs = now - msgDate;
+          const oneDayMs = 24 * 60 * 60 * 1000;
+
+          if (diffMs < oneDayMs) {
+            // If the message is less than a day old, show only the time
+            formattedTime = msgDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          } else {
+            // If older, show the date and time
+            formattedTime = `${msgDate.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}, ${msgDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+          }
+        }
+
+        tsSpan.textContent = formattedTime;
+        msgDiv.appendChild(tsSpan);
+
+        // Add the delete button if the user can delete the message
+        if (canDelete) {
+          const delBtn = document.createElement("button");
+          delBtn.classList.add("delete-btn");
+          delBtn.textContent = "delete";
+          delBtn.onclick = () => deleteGroupMessage(msg._id); // Pass the message ID
+          msgDiv.appendChild(delBtn);
+        }
+
+        // Handle read receipts
+        if (isMine) {
+          // Exclude the current user from the read_by list
+          const othersWhoRead = (msg.read_by || []).filter(reader => reader !== username);
+          if (othersWhoRead.length > 0) {
+            msgDiv.title = `Seen by: ${othersWhoRead.join(", ")}`;
+          } else {
+            msgDiv.title = "Not seen yet";
+          }
+        } else {
+          // Remove any existing title attribute for messages sent by others
+          msgDiv.removeAttribute("title");
+        }
+
+        // Append the message bubble and a clear div to handle floating
+        const clearDiv = document.createElement("div");
+        clearDiv.classList.add("clear");
+
+        container.appendChild(msgDiv);
+        container.appendChild(clearDiv);
+      });
+
+      // Scroll to the bottom of the messages container to show the latest messages
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // =========== SEND A NEW MESSAGE ============
+    function sendMessage() {
+      const msgInput = document.getElementById("msgInput");
+      const msgText = msgInput.value.trim();
+      if(!msgText) return false;
+
+      fetch("/send_group_message", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          token: token,
+          group_name: groupName,
+          message: msgText
+        })
+      })
+      .then(response => {
+        if(response.status === 401){
+          throw new Error("401");
+        }
+        return response.json();
+      })
+      .then(data => {
+        if(data.error){
+          alert("Error sending group message: " + data.error);
+        } else {
+          msgInput.value = "";
+          fetchGroupMessages(); // Refresh messages
+        }
+      })
+      .catch(err => {
+        if(err.message === "401") {
+          refreshToken().then(() => sendMessage());
+        } else {
+          console.error("send_group_message error:", err);
+          alert("Failed to send group message.");
+        }
+      });
+
+      return false; // Prevent form submission
+    }
+
+    // =========== DELETE A GROUP MESSAGE ============
+    function deleteGroupMessage(messageId) {
+      console.log("Attempting to delete message:", messageId); // Debugging line
+      console.log("Token:", token); // Debugging line
+      console.log("Group Name:", groupName); // Debugging line
+
+      fetch("/delete_group_message", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          token: token,             // Ensure 'token' is defined and valid
+          group_name: groupName,    // Ensure 'groupName' is correctly set
+          message_id: messageId     // The ID of the message to delete
+        })
+      })
+      .then(response => {
+        if (response.status === 401) {
+          throw new Error("401");
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.error) {
+          alert("Error deleting group message: " + data.error);
+        } else {
+          // Optionally remove the message from the DOM or re-fetch messages
+          fetchGroupMessages();
+        }
+      })
+      .catch(err => {
+        if (err.message === "401") {
+          refreshToken().then(() => deleteGroupMessage(messageId));
+        } else {
+          console.error("deleteGroupMessage error:", err);
+          alert("Failed to delete group message.");
+        }
+      });
+    }
+
+    // =========== POLLING ============
+    document.addEventListener("DOMContentLoaded", () => {
+      fetchGroupMessages();
+      setInterval(fetchGroupMessages, 5000); // Poll every 5 seconds
+    });
+
+    // =========== LEAVE GROUP FUNCTION ============
+    function leaveGroup() {
+      if(!isOwner){
+        // Ordinary member leaves the group
+        removeUserFromGroup(username);
+      } else {
+        // Owner attempts to leave the group, must reassign ownership
+        if(groupMembers.length < 2){
+          alert("You cannot leave if you are the only member. Consider deleting the group instead.");
+          return;
+        }
+        // Display the ownership reassignment UI
+        const osc = document.getElementById("ownerSelectContainer");
+        osc.style.display = "flex";
+        const newOwnerSelect = document.getElementById("newOwnerSelect");
+        newOwnerSelect.innerHTML = "";
+        groupMembers.forEach(member => {
+          if(member !== username){
+            const opt = document.createElement("option");
+            opt.value = member;
+            opt.textContent = member;
+            newOwnerSelect.appendChild(opt);
+          }
+        });
+        newOwnerSelect.onchange = () => {
+          const chosenNewOwner = newOwnerSelect.value;
+          if(!chosenNewOwner) return;
+          reassignOwnershipAndLeave(chosenNewOwner);
+        };
+      }
+    }
+
+    function removeUserFromGroup(userToRemove) {
+      fetch("/remove_user_from_group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: token,
+          group_name: groupName,
+          username: userToRemove
+        })
+      })
+      .then(resp => resp.json())
+      .then(data => {
+        if(data.error){
+          alert("Error removing user: " + data.error);
+        } else {
+          alert("You have left the group.");
+          window.location.href = "/dashboard";
+        }
+      })
+      .catch(e => console.error("removeUserFromGroup error:", e));
+    }
+
+    function reassignOwnershipAndLeave(newOwner) {
+      fetch("/reassign_group_owner_and_remove", {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({
+          token: token,
+          group_name: groupName,
+          new_owner: newOwner
+        })
+      })
+      .then(resp => resp.json())
+      .then(data => {
+        if(data.error){
+          alert("Error reassigning ownership: " + data.error);
+        } else {
+          alert(data.message);
+          window.location.href = "/dashboard";
+        }
+      })
+      .catch(e => console.error("reassignOwnershipAndLeave error:", e));
+    }
+  </script>
+</body>
+</html>

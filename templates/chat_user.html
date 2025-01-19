@@ -7,24 +7,56 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      background-color: #f2f2f2;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 0;
     }
+
+    /* Top bar solely for the back button */
+    .top-bar {
+      height: 50px;
+      background: #fafafa;
+      border-bottom: 1px solid #ddd;
+      position: relative;
+    }
+    .back-btn {
+      position: absolute;
+      left: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      font-size: 1.6rem;
+      cursor: pointer;
+      color: #555;
+      z-index: 10;
+    }
+    .back-btn:hover {
+      color: #000;
+    }
+
     .chat-container {
-      border: 1px solid #ccc;
       width: 60%;
-      max-width: 800px;
-      margin: 2rem auto;
-      padding: 1rem;
+      max-width: 900px;
+      margin: 1rem auto;
       background-color: #fff;
       border-radius: 8px;
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      display: flex;
+      flex-direction: column;
+      height: 80vh;
+      overflow: hidden;
+      position: relative;
     }
+
+    /* Chat header (below the top bar) */
     .chat-header {
       display: flex;
       align-items: center;
-      margin-bottom: 1rem;
+      padding: 1rem;
       border-bottom: 1px solid #ddd;
-      padding-bottom: 0.5rem;
+      background-color: #fafafa;
+      position: relative;
     }
     .chat-header img {
       width: 50px;
@@ -32,37 +64,62 @@
       border-radius: 50%;
       margin-right: 1rem;
       object-fit: cover;
+      border: 2px solid #ccc;
     }
     .chat-header h2 {
       margin: 0;
-      font-size: 1.5rem;
+      font-size: 1.4rem;
     }
     .chat-header .status {
       margin-left: 1rem;
       font-size: 0.9rem;
-      color: #555; /* Default color; updated via JS */
+      color: #555;
     }
-    #messages-area {
-      height: 400px;
-      overflow-y: scroll;
-      padding: 1rem;
-      border: 1px solid #ddd;
+    .block-btn {
+      background-color: #ff5252;
+      border: none;
+      color: white;
+      padding: 0.4rem 0.8rem;
       border-radius: 4px;
-      background-color: #fafafa;
+      cursor: pointer;
+      font-size: 0.9rem;
+      position: absolute;
+      right: 1rem;
+      top: 1.2rem;
+      z-index: 2;
     }
+    .block-btn:hover {
+      background-color: #ff2e2e;
+    }
+
+    .messages-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #messages-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      background-color: #f9f9f9;
+      position: relative;
+    }
+
     .message {
       padding: 0.8rem 1.2rem;
-      margin-bottom: 0.8rem;
-      border-radius: 20px;
-      max-width: 80%;
+      margin-bottom: 1rem;
+      border-radius: 6px;
+      max-width: 70%;
       clear: both;
       position: relative;
       word-wrap: break-word;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      font-size: 1rem;
+      background-color: #fff;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
     .message.mine {
-      background-color: #dcf8c6;
+      background-color: #e1ffc7;
       float: right;
       text-align: right;
     }
@@ -70,36 +127,97 @@
       background-color: #fff;
       float: left;
       text-align: left;
-      border: 1px solid #ddd;
     }
+
+    .reply-preview {
+      font-size: 0.9rem;
+      color: #444;
+      margin-bottom: 0.4rem;
+      padding: 0.4rem;
+      border-left: 2px solid #999;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+      margin-top: -0.2rem;
+    }
+
     .timestamp {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       color: #999;
       display: block;
       margin-top: 0.3rem;
     }
     .read-receipt {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       color: #999;
       margin-left: 0.5rem;
+      margin-bottom: 0.3rem;
+      display: inline-block;
     }
-    .delete-btn {
+
+    .action-buttons {
       position: absolute;
-      bottom: -3px;
+      bottom: 5px;
       right: 10px;
+      display: flex;
+      gap: 5px;
+    }
+    .delete-btn,
+    .edit-btn,
+    .reply-btn {
       background: none;
       border: none;
-      color: red;
       cursor: pointer;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       outline: none;
+      padding: 2px 5px;
+      border-radius: 3px;
+      transition: background-color 0.2s ease;
     }
+    .delete-btn {
+      color: red;
+    }
+    .delete-btn:hover {
+      background-color: rgba(255, 0, 0, 0.1);
+    }
+    .edit-btn {
+      color: #007bff;
+    }
+    .edit-btn:hover {
+      background-color: rgba(0, 123, 255, 0.1);
+    }
+    .reply-btn {
+      color: #888;
+    }
+    .reply-btn:hover {
+      background-color: rgba(136, 136, 136, 0.1);
+    }
+
     .clear {
       clear: both;
     }
+
+    /* Reply Banner */
+    #replyBanner {
+      display: none;
+      padding: 0.5rem;
+      background: #fafbfc;
+      border-left: 4px solid #ccc;
+      margin: 0 1rem 1rem 1rem;
+      position: relative;
+    }
+    #replyPreviewText {
+      font-weight: bold;
+      color: #333;
+      margin-left: 5px;
+    }
+
+    /* Input area for text */
     #sendForm {
       display: flex;
-      margin-top: 1rem;
+      padding: 0.8rem;
+      border-top: 1px solid #ddd;
+      background-color: #fafafa;
+      align-items: center;
     }
     #msgInput {
       flex: 1;
@@ -117,195 +235,322 @@
       border: none;
       border-radius: 4px;
       cursor: pointer;
+      transition: background-color 0.3s ease;
     }
     #sendBtn:hover {
       background-color: #45a049;
     }
-    #backBtn {
-      margin-top: 1rem;
-      padding: 0.5rem 1rem;
-      font-size: 1rem;
-      background-color: #f44336;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
+    #sendBtn:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
     }
-    #backBtn:hover {
-      background-color: #da190b;
+
+    @media (max-width: 768px) {
+      .chat-container {
+        width: 95%;
+      }
+      .message {
+        max-width: 80%;
+      }
     }
   </style>
 </head>
 <body>
+  <!-- Separate top bar for back button -->
+  <div class="top-bar">
+    <button class="back-btn" onclick="window.location.href='/dashboard'" title="Back to Dashboard">&#8592;</button>
+  </div>
+
   <div class="chat-container">
-    <!-- Header -->
+    <!-- Chat Header (profile, name, block button) -->
     <div class="chat-header">
       {% if other_user_profile %}
         <img src="{{ other_user_profile }}" alt="Profile Picture" />
       {% else %}
-        <img src="/static/default_profile.png" alt="No Profile Picture" />
+        <img src="/profile_pictures/default_profile.png" alt="No Profile Picture" />
       {% endif %}
       <div>
         <h2>{{ other_user }}</h2>
-        <!-- Status will be dynamically updated -->
         <span class="status">
           {% if other_user_status == "online" %}
             Online
           {% elif other_user_status.startswith("last seen") %}
             {{ other_user_status }}
-          {% else %}
+          {% else %}  
             Status unavailable
           {% endif %}
         </span>
       </div>
+      <button class="block-btn" id="blockBtn"></button>
     </div>
 
-    <!-- Messages -->
-    <div id="messages-area">
-      {% for msg in messages %}
-        {% set isMine = (msg.sender == username) %}
-        <div class="message {% if isMine %}mine{% else %}other{% endif %}">
-          {{ msg.message }}
-          <span class="timestamp">
-            {% set msg_time = msg.timestamp %}
-            {% set msg_datetime = msg_time | to_datetime %}
-            {% set now = "now" | to_datetime %}
-            {% set diff = now - msg_datetime %}
-            {% if diff.total_seconds() < 86400 %}
-              {{ msg_datetime.strftime("%H:%M") }}
-            {% else %}
-              {{ msg_datetime.strftime("%d %b %Y, %H:%M") }}
-            {% endif %}
-          </span>
-          {% if isMine %}
-            {% if other_user in msg.read_by %}
-              <span class="read-receipt">✔✔</span>
-            {% else %}
-              <span class="read-receipt">✔</span>
-            {% endif %}
-            <button class="delete-btn" onclick="deleteMessage('{{ msg._id }}')">delete</button>
-          {% endif %}
-        </div>
-        <div class="clear"></div>
-      {% endfor %}
+    <!-- Reply Banner -->
+    <div id="replyBanner">
+      Replying to:
+      <span id="replyPreviewText"></span>
+      <button onclick="cancelReply()" style="margin-left: 10px; cursor: pointer;">Cancel</button>
     </div>
 
-    <!-- Send New Message -->
+    <div class="messages-wrapper">
+      <div id="messages-area"></div>
+    </div>
+
+    <!-- Input area for text -->
     <form id="sendForm" onsubmit="return sendMessage();">
-      <input type="text" id="msgInput" placeholder="Type a message..." required />
+      <input type="text" id="msgInput" placeholder="Type a message..." />
       <button type="submit" id="sendBtn">Send</button>
     </form>
-
-    <!-- Back to Dashboard -->
-    <button id="backBtn" onclick="window.location.href='/dashboard'">Back to Dashboard</button>
   </div>
 
   <script>
     let token = "{{ session['token'] }}";
     const otherUser = "{{ other_user }}";
+    const currentUser = "{{ username }}";
+    let nodeName = {{ node_name|tojson }};;
+
     let refreshInProgress = false;
+    let isBlocked = false;
+    let otherSideBlockedUs = false;
 
-    // Function to refresh token on the client if we get a 401
-    function refreshToken() {
-      if (refreshInProgress) {
-        // Already refreshing, don't call again
-        return Promise.resolve();
+    let currentReplyMsgId = null;
+    let currentReplyPreview = null;
+
+    function updateSendButton() {
+      const sendBtn = document.getElementById("sendBtn");
+      if (isBlocked || otherSideBlockedUs) {
+        sendBtn.disabled = true;
+      } else {
+        sendBtn.disabled = false;
       }
-      refreshInProgress = true;
+    }
 
+    function refreshToken() {
+      if (refreshInProgress) return Promise.resolve();
+      refreshInProgress = true;
       return fetch("/refresh_token", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: token })
       })
-      .then(resp => {
-        if (resp.status === 429) {  // Too Many Requests
-          throw new Error("429");
-        }
-        return resp.json();
-      })
+      .then(resp => resp.json())
       .then(data => {
         if (data.token) {
-          token = data.token; // Update our global token variable
-          console.log("Token refreshed on client side:", token);
-          // Update Flask session with the new token
+          token = data.token;
           return fetch("/update_token", {
             method: "POST",
-            headers: {"Content-Type": "application/json"},
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token: token })
-          })
-          .then(resp => resp.json())
-          .then(updateData => {
-            if (updateData.error) {
-              console.error("Failed to update token in session:", updateData.error);
-            } else {
-              console.log("Token updated in Flask session.");
-            }
           });
-        } else {
-          console.error("Token refresh failed:", data);
         }
       })
-      .catch(err => {
-        console.error("refreshToken error:", err);
-      })
+      .catch(err => console.error("refreshToken error:", err))
       .finally(() => {
         refreshInProgress = false;
       });
     }
 
-    // Function to fetch messages with fallback for 401
     function refreshMessages() {
-      fetch(`/get_messages?token=${encodeURIComponent(token)}&other_user=${encodeURIComponent(otherUser)}`)
-        .then(response => {
-          if(response.status === 401) {
-            // Token likely expired => refresh it
-            throw new Error("401");
-          }
-          return response.json();
-        })
-        .then(data => {
-          if(data.error){
-            console.error("Error fetching messages:", data.error);
-            return;
-          }
-          renderMessages(data.messages || []);
-        })
-        .catch(error => {
-          if(error.message === "401") {
-            // 1) Refresh the token, then 2) re-fetch messages
-            refreshToken().then(() => refreshMessages());
-          } else {
-            console.error("refreshMessages error:", error);
-          }
-        });
+      const payload = {
+        node_name: nodeName,
+        token: token,
+        other_user: otherUser
+      };
+    
+      return fetch("/get_messages_via_erlang", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (!data || typeof data !== "object" || !data.messages) {
+          console.error("Invalid JSON response from server:", data);
+          return;
+        }
+        renderMessages(data.messages);
+      })
+      .catch(err => {
+        console.error("refreshMessages error:", err);
+        return Promise.reject(err);
+      });
     }
 
-    // Function to delete a message with fallback for 401
+    function renderMessages(messages) {
+      const container = document.getElementById("messages-area");
+      container.innerHTML = "";
+
+      messages.forEach(msg => {
+        const isMine = (msg.sender === currentUser);
+        const messageDiv = document.createElement("div");
+        messageDiv.classList.add("message", isMine ? "mine" : "other");
+
+        if (msg.reply_to && msg.reply_preview) {
+          const replyDiv = document.createElement("div");
+          replyDiv.classList.add("reply-preview");
+          replyDiv.textContent = msg.reply_preview;
+          messageDiv.appendChild(replyDiv);
+        }
+
+        // Display text message
+        const textSpan = document.createElement("span");
+        textSpan.textContent = msg.message;
+        messageDiv.appendChild(textSpan);
+
+        if (msg.edited) {
+          const editedSpan = document.createElement("span");
+          editedSpan.textContent = " (edited)";
+          editedSpan.style.fontStyle = "italic";
+          editedSpan.style.fontSize = "0.8rem";
+          messageDiv.appendChild(editedSpan);
+        }
+
+        const tsSpan = document.createElement("span");
+        tsSpan.classList.add("timestamp");
+        const msgDate = new Date(msg.timestamp);
+        const now = new Date();
+        const diffMs = now - msgDate;
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        let formattedTime = "";
+        if (diffMs < oneDayMs) {
+          formattedTime = msgDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        } else {
+          formattedTime = msgDate.toLocaleDateString([], {day: '2-digit', month: 'short', year: 'numeric'}) + ", " +
+                          msgDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+        tsSpan.textContent = " " + formattedTime;
+        messageDiv.appendChild(tsSpan);
+
+        if (isMine) {
+          const readReceipt = document.createElement("span");
+          readReceipt.classList.add("read-receipt");
+          if (msg.read_by && msg.read_by.includes(otherUser)) {
+            readReceipt.textContent = "✔✔";
+          } else {
+            readReceipt.textContent = "✔";
+          }
+          messageDiv.appendChild(readReceipt);
+
+          const actionBtns = document.createElement("div");
+          actionBtns.classList.add("action-buttons");
+
+          const delBtn = document.createElement("button");
+          delBtn.classList.add("delete-btn");
+          delBtn.textContent = "Delete";
+          delBtn.onclick = () => deleteMessage(msg._id);
+          actionBtns.appendChild(delBtn);
+
+          const editBtn = document.createElement("button");
+          editBtn.classList.add("edit-btn");
+          editBtn.textContent = "Edit";
+          editBtn.onclick = () => editMessage(msg._id, msg.message);
+          actionBtns.appendChild(editBtn);
+
+          const replyBtn = document.createElement("button");
+          replyBtn.classList.add("reply-btn");
+          replyBtn.textContent = "↩";
+          replyBtn.title = "Reply";
+          replyBtn.onclick = () => startReply(msg._id, msg.message);
+          actionBtns.appendChild(replyBtn);
+
+          messageDiv.appendChild(actionBtns);
+        } else {
+          const actionBtns = document.createElement("div");
+          actionBtns.classList.add("action-buttons");
+          const replyBtn = document.createElement("button");
+          replyBtn.classList.add("reply-btn");
+          replyBtn.textContent = "↩";
+          replyBtn.title = "Reply";
+          replyBtn.onclick = () => startReply(msg._id, msg.message);
+          actionBtns.appendChild(replyBtn);
+          messageDiv.appendChild(actionBtns);
+        }
+
+        const clearDiv = document.createElement("div");
+        clearDiv.classList.add("clear");
+        container.appendChild(messageDiv);
+        container.appendChild(clearDiv);
+      });
+
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function startReply(msgId, msgText) {
+      currentReplyMsgId = msgId;
+      currentReplyPreview = msgText.slice(0, 80);
+      if (msgText.length > 80) currentReplyPreview += "...";
+      document.getElementById("replyBanner").style.display = "block";
+      document.getElementById("replyPreviewText").textContent = currentReplyPreview;
+    }
+
+    function cancelReply() {
+      currentReplyMsgId = null;
+      currentReplyPreview = null;
+      document.getElementById("replyBanner").style.display = "none";
+    }
+
+    function sendMessage() {
+      const msgInput = document.getElementById("msgInput");
+      const msgText = msgInput.value.trim();
+      if (!msgText) return false;
+
+      const payload = { token, receiver: otherUser };
+      if (msgText) payload.message = msgText;
+      if (currentReplyMsgId) payload.reply_to_msg_id = currentReplyMsgId;
+      if (currentReplyPreview) payload.reply_preview = currentReplyPreview;
+
+      fetch("/send_message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+      .then(r => {
+        if (r.status === 401) throw new Error("401");
+        return r.json();
+      })
+      .then(data => {
+        if (data.error) {
+          alert("Error sending message: " + data.error);
+        } else {
+          msgInput.value = "";
+          cancelReply();
+          refreshMessages();
+        }
+      })
+      .catch(err => {
+        if (err.message === "401") {
+          refreshToken().then(() => sendMessage());
+        } else {
+          console.error("send_message error:", err);
+        }
+      });
+
+      return false;
+    }
+
     function deleteMessage(msgId) {
       fetch("/delete_message", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          token: token,
-          message_id: msgId,
-          delete_for_both: false
-        })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, message_id: msgId })
       })
-      .then(resp => {
-        if(resp.status === 401) {
-          throw new Error("401");
-        }
-        return resp.json();
+      .then(r => {
+        if (r.status === 401) throw new Error("401");
+        return r.json();
       })
       .then(data => {
-        if(data.error){
+        if (data.error) {
           alert("Error deleting message: " + data.error);
+        } else {
+          refreshMessages();
         }
-        refreshMessages(); // Re-fetch messages after deletion
       })
       .catch(err => {
-        if(err.message === "401") {
+        if (err.message === "401") {
           refreshToken().then(() => deleteMessage(msgId));
         } else {
           console.error("deleteMessage error:", err);
@@ -313,193 +558,188 @@
       });
     }
 
-    // Send a new message
-    function sendMessage() {
-      const msgInput = document.getElementById('msgInput');
-      const msgText = msgInput.value.trim();
-      if(!msgText) return false;
+    function editMessage(msgId, oldText) {
+      const newText = prompt("Edit your message:", oldText);
+      if (!newText || newText.trim() === oldText) return;
 
-      fetch("/send_message", {
+      fetch("/edit_message", {
         method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, message_id: msgId, new_text: newText.trim() })
+      })
+      .then(r => {
+        if (r.status === 401) throw new Error("401");
+        return r.json();
+      })
+      .then(data => {
+        if (data.error) {
+          alert("Error editing message: " + data.error);
+        } else {
+          refreshMessages();
+        }
+      })
+      .catch(err => {
+        if (err.message === "401") {
+          refreshToken().then(() => editMessage(msgId, oldText));
+        } else {
+          console.error("editMessage error:", err);
+          alert("Failed to edit message.");
+        }
+      });
+    }
+
+    function toggleBlock() {
+      if (!nodeName) {
+          console.error("Node name is missing! Cannot proceed.");
+          alert("Error: Unable to process request due to missing node name.");
+          return;
+      }
+  
+      const payload = {
+          node_name: nodeName,
           token: token,
-          receiver: otherUser,
-          message: msgText
+          other_user: otherUser
+      };
+  
+      fetch("/toggle_block_user_via_erlang", {
+          method: "POST",
+          headers: {
+              "Content-Type": "application/json"  // Ensure JSON format
+          },
+          body: JSON.stringify(payload)  // Convert JS object to JSON string
+      })
+      .then(resp => resp.json())  // Expect JSON response
+      .then(data => {
+          if (data.error) {
+              alert("Error: " + data.error);
+          } else {
+              isBlocked = !isBlocked;  // Toggle block state
+              updateBlockButton();  // Update UI
+              updateSendButton();
+              alert(data.message);
+          }
+      })
+      .catch(err => {
+          console.error("toggleBlock error:", err);
+      });
+    }
+
+    function checkBlockStatus() {
+      return fetch(`/check_block_status?token=${encodeURIComponent(token)}&other_user=${encodeURIComponent(otherUser)}`)
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP error! Status: ${r.status}`);
+          return r.json();
         })
+        .then(data => {
+          isBlocked = data.we_blocked_them;
+          otherSideBlockedUs = data.they_blocked_us;
+          updateBlockButton();
+          updateSendButton();
+        })
+        .catch(err => {
+          console.error("checkBlockStatus error:", err);
+          return Promise.reject(err); // Ensure it's still a Promise
+        });
+    }
+
+      function updateBlockButton() {
+        const btn = document.getElementById("blockBtn");
+        btn.textContent = isBlocked ? "Unblock" : "Block";
+    }
+
+    function refreshUserStatus() {
+      if (!nodeName) {
+        console.error("Error: Node name is missing!");
+        return Promise.resolve();  // Return a resolved Promise if missing node
+      }
+    
+      const payload = {
+        node_name: nodeName,
+        token: token,
+        username: otherUser
+      };
+    
+      return fetch("/get_user_status_via_erlang", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       })
       .then(response => {
-        if(response.status === 401){
-          throw new Error("401");
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
         }
         return response.json();
       })
       .then(data => {
-        console.log("send_message response:", data);
-        if(data.error){
-          alert("Error sending message: " + data.error);
+        if (!data || typeof data !== "object") {
+          console.error("Invalid JSON response from server:", data);
+          return;
         }
-        msgInput.value = "";
-        // Refresh messages
-        refreshMessages();
+        updateStatusUI(data);
       })
       .catch(err => {
-        if(err.message === "401") {
-          refreshToken().then(() => sendMessage());
-        } else {
-          console.error("send_message error:", err);
-          alert("Failed to send message.");
-        }
+        console.error("refreshUserStatus error:", err);
+        return Promise.reject(err);
       });
-
-      return false; // prevent form from redirecting
     }
 
-    // Render messages in the messages-area
-    function renderMessages(messages) {
-      const container = document.getElementById('messages-area');
-      container.innerHTML = "";
-
-      messages.forEach(msg => {
-        const isMine = (msg.sender === "{{ username }}");
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message');
-        messageDiv.classList.add(isMine ? 'mine' : 'other');
-
-        // Message text
-        const messageText = document.createElement('span');
-        messageText.textContent = msg.message;
-        messageDiv.appendChild(messageText);
-
-        // Timestamp
-        const tsSpan = document.createElement('span');
-        tsSpan.classList.add('timestamp');
-        const msgDate = new Date(msg.timestamp);
-        const now = new Date();
-        const diffMs = now - msgDate;
-        const oneDayMs = 24 * 60 * 60 * 1000;
-
-        let formattedTime = "";
-        if(diffMs < oneDayMs){
-          // show HH:MM
-          formattedTime = msgDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        } else {
-          // show DD Mon YYYY, HH:MM
-          formattedTime = msgDate.toLocaleDateString([], {day: '2-digit', month: 'short', year: 'numeric'}) + ", " +
-                          msgDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        }
-        tsSpan.textContent = " " + formattedTime;
-        messageDiv.appendChild(tsSpan);
-
-        // Read receipts
-        if(isMine){
-          const readReceipt = document.createElement('span');
-          readReceipt.classList.add('read-receipt');
-          if(msg.read_by.includes(otherUser)){
-            readReceipt.textContent = "✔✔";
-          } else {
-            readReceipt.textContent = "✔";
-          }
-          messageDiv.appendChild(readReceipt);
-        }
-
-        // Delete button for own messages
-        if(isMine){
-          const delBtn = document.createElement('button');
-          delBtn.classList.add('delete-btn');
-          delBtn.textContent = "delete";
-          delBtn.onclick = () => deleteMessage(msg._id);
-          messageDiv.appendChild(delBtn);
-        }
-
-        // Clear floats
-        const clearDiv = document.createElement('div');
-        clearDiv.classList.add('clear');
-
-        container.appendChild(messageDiv);
-        container.appendChild(clearDiv);
-      });
-
-      // Scroll to the bottom
-      container.scrollTop = container.scrollHeight;
-    }
-
-    // ========= 1) Poll the user's status just like messages =========
-    function refreshUserStatus() {
-      fetch(`/get_user_status?token=${encodeURIComponent(token)}&username=${encodeURIComponent(otherUser)}`)
-        .then(response => {
-          if (response.status === 401) {
-            throw new Error("401");
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (data.error) {
-            console.error("Error fetching user status:", data.error);
-            return;
-          }
-          updateStatusUI(data);
-        })
-        .catch(err => {
-          if (err.message === "401") {
-            // If token expired, refresh it and retry
-            refreshToken().then(() => refreshUserStatus());
-          } else {
-            console.error("refreshUserStatus error:", err);
-          }
-        });
-    }
-
-    // ========= 2) Update the DOM with the status info =========
-    function updateStatusUI(statusData) {
+    function updateStatusUI(stData) {
       const statusSpan = document.querySelector(".chat-header .status");
-      if (!statusData || !statusData.status) {
-        statusSpan.textContent = "Status unavailable";
-        statusSpan.style.color = "#555";
-        return;
+  
+      if (!stData || !stData.status) {
+          statusSpan.textContent = "Status unavailable";
+          statusSpan.style.color = "#555";
+          return;
       }
-
-      if (statusData.status === "online") {
-        // Online
-        statusSpan.textContent = "Online";
-        statusSpan.style.color = "green";
+  
+      if (stData.status === "online") {
+          statusSpan.textContent = "Online";
+          statusSpan.style.color = "green";
       } else {
-        // Offline => display "last seen ..."
-        let lastOnline = statusData.last_online;
-        if (!lastOnline || lastOnline === "Never") {
-          statusSpan.textContent = "Offline";
-          statusSpan.style.color = "gray";
-        } else {
-          // Same day-vs-24hr logic used for messages
-          const dt = new Date(lastOnline);
-          const now = new Date();
-          const diffMs = now - dt;
-          const oneDayMs = 24 * 60 * 60 * 1000;
-
-          let displayTime = "";
-          if (diffMs < oneDayMs) {
-            // show HH:MM
-            displayTime = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          let lastOnline = stData.last_online;
+          if (!lastOnline || lastOnline === "Never") {
+              statusSpan.textContent = "Offline";
+              statusSpan.style.color = "gray";
           } else {
-            // show DD Mon YYYY, HH:MM
-            displayTime = dt.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })
-                        + ", "
-                        + dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const dt = new Date(lastOnline);
+              const now = new Date();
+              const diffMs = now - dt;
+              const oneDayMs = 24 * 60 * 60 * 1000;
+              let displayTime = "";
+  
+              if (diffMs < oneDayMs) {
+                  displayTime = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              } else {
+                  displayTime = dt.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) +
+                      ", " +
+                      dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              }
+              statusSpan.textContent = "last seen " + displayTime;
+              statusSpan.style.color = "gray";
           }
-          statusSpan.textContent = "last seen " + displayTime;
-          statusSpan.style.color = "gray";
-        }
       }
     }
 
-    // ========= 3) Kick off a timer for status, in addition to messages =========
-    setInterval(refreshMessages, 5000); // poll messages every 5s
-    setInterval(refreshUserStatus, 5000); // poll status every 5s
-
-    // Initial load
-    document.addEventListener('DOMContentLoaded', () => {
-      refreshMessages();
-      refreshUserStatus(); // also load the user's status once at startup
+    function initialFetchChat() {
+      checkBlockStatus()
+        .then(() => refreshMessages())
+        .then(() => refreshUserStatus())
+        .catch(err => console.error("initialFetchChat chain error:", err));
+    }
+    
+    document.addEventListener("DOMContentLoaded", () => {
+      initialFetchChat();
+    
+      // Refresh every 5 seconds in sequence
+      setInterval(() => {
+        checkBlockStatus()
+          .then(() => refreshMessages())
+          .then(() => refreshUserStatus())
+          .catch(err => console.error("5-second chain error:", err));
+      }, 5000);
+    
+      const blockBtn = document.getElementById("blockBtn");
+      blockBtn.addEventListener("click", toggleBlock);
     });
   </script>
 </body>

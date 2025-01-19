@@ -12,21 +12,18 @@
       padding: 0;
       color: #333;
     }
-
     .container {
-      max-width: 800px;
+      max-width: 900px;
       margin: 2rem auto;
-      padding: 1rem;
+      padding: 1.5rem;
       background: #fff;
       border-radius: 8px;
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
-
     h2 {
       text-align: center;
       color: #555;
     }
-
     .profile {
       display: flex;
       align-items: center;
@@ -34,19 +31,17 @@
       gap: 1rem;
       margin-bottom: 2rem;
     }
-
     .profile img {
       border-radius: 50%;
       border: 2px solid #ddd;
-      width: 60px;
-      height: 60px;
+      width: 80px;
+      height: 80px;
+      object-fit: cover;
     }
-
     .action-buttons {
       text-align: center;
       margin-bottom: 2rem;
     }
-
     .action-buttons button {
       background-color: #007bff;
       color: #fff;
@@ -56,18 +51,17 @@
       margin: 0.5rem;
       cursor: pointer;
       font-size: 1rem;
+      transition: background-color 0.3s ease;
     }
-
     .action-buttons button:hover {
       background-color: #0056b3;
     }
-
     .tabs {
       display: flex;
       justify-content: center;
       margin-bottom: 1rem;
+      border-bottom: 2px solid #007bff;
     }
-
     .tab {
       cursor: pointer;
       padding: 0.7rem 1.5rem;
@@ -76,61 +70,181 @@
       margin: 0 0.2rem;
       font-weight: bold;
       color: #555;
+      transition: background-color 0.3s ease, color 0.3s ease;
     }
-
     .tab.active {
       background-color: #007bff;
       color: #fff;
     }
-
     .tab-content {
       display: none;
-      border-top: 2px solid #007bff;
-      background: #f9f9f9;
       padding: 1rem;
+      border: 1px solid #ddd;
+      border-top: none;
+      background: #f9f9f9;
       border-radius: 0 0 8px 8px;
     }
-
     .tab-content.active {
       display: block;
     }
-
     ul {
       list-style-type: none;
       padding: 0;
     }
-
     ul li {
       margin: 0.5rem 0;
-      padding: 0.5rem;
+      padding: 0.7rem;
       background: #f0f0f0;
       border-radius: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
-
     ul li a {
       text-decoration: none;
-      color: 007bff;
+      color: #007bff;
       font-weight: bold;
     }
-
     ul li a:hover {
       text-decoration: underline;
+    }
+    .unread-count {
+      background-color: red;
+      color: white;
+      border-radius: 50%;
+      padding: 0.3rem 0.6rem;
+      font-size: 0.8rem;
+      min-width: 20px;
+      text-align: center;
+      display: none;
+    }
+    .unread-count.show {
+      display: inline-block;
     }
     #logout {
       background-color: rgb(255, 0, 0);
     }
+    #creategroup {
+      background-color: rgb(28, 165, 28);
+    }
+    .search-container {
+      position: relative;
+      margin-bottom: 2rem;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .search-container input[type="text"] {
+      width: 100%;
+      padding: 0.8rem 2.5rem 0.8rem 1rem;
+      border: 1px solid #ccc;
+      border-radius: 50px;
+      font-size: 1rem;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+      background-color: #f9f9f9;
+    }
+    .search-container input[type="text"]:focus {
+      border-color: #007bff;
+      box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
+      outline: none;
+      background-color: #fff;
+    }
+    .search-container .search-icon {
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #888;
+      font-size: 1.2rem;
+      pointer-events: none;
+      transition: color 0.3s ease;
+    }
+    .search-container input[type="text"]:focus + .search-icon {
+      color: #007bff;
+    }
+    .search-results {
+      position: absolute;
+      top: 110%;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      max-height: 250px;
+      overflow-y: auto;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      z-index: 10;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-10px);
+      transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s;
+    }
+    .search-results.show {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+    .search-results div {
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    .search-results div:last-child {
+      border-bottom: none;
+    }
+    .search-results div:hover {
+      background-color: #f0f8ff;
+      color: #007bff;
+    }
+    @media (max-width: 600px) {
+      .search-container {
+        max-width: 90%;
+      }
+      .search-container input[type="text"] {
+        font-size: 0.9rem;
+        padding: 0.7rem 2.2rem 0.7rem 0.9rem;
+      }
+      .search-container .search-icon {
+        font-size: 1rem;
+        right: 0.8rem;
+      }
+    }
   </style>
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  />
 </head>
 <body>
   <div class="container">
     <div class="profile">
-      <img src="{{ user_profile_url }}" alt="Your Profile" />
+      {% if user_profile_url %}
+        <img src="{{ user_profile_url }}" alt="Your Profile" />
+      {% else %}
+        <img src="/profile_pictures/default_profile.png" alt="No Profile Picture" />
+      {% endif %}
+      <h2>Welcome, {{ username }}!</h2>
     </div>
-    <h2>Welcome, {{ username }}!</h2>
 
     <div class="action-buttons">
-      <button id=logout onclick="window.location.href='/logout_local'">Logout</button>
+      <button id="logout" onclick="window.location.href='/logout_via_erlang'">Logout</button>
       <button onclick="window.location.href='/change_info'">Change Information</button>
+      <button id="creategroup" onclick="window.location.href='/create_group_page'">Create Group</button>
+    </div>
+
+    <div class="search-container">
+      <input
+        type="text"
+        id="userSearchInput"
+        placeholder="Search a user to chat with..."
+        autocomplete="off"
+        aria-label="Search for a user to chat with"
+      />
+      <i class="fas fa-search search-icon"></i>
+      <div class="search-results" id="userSearchResults"></div>
     </div>
 
     <div class="tabs">
@@ -139,22 +253,24 @@
     </div>
 
     <div class="tab-content active" id="privateTabContent">
-      <h3>Your Chat Partners</h3>
-      <ul>
+      <h3>Your Private Chats <span id="privateUnreadTotal" class="unread-count"></span></h3>
+      <ul id="partnersList">
         {% for partner in chat_partners %}
           <li>
             <a href="/chat/{{ partner }}">{{ partner }}</a>
+            <span class="unread-count" id="unread_{{ partner }}"></span>
           </li>
         {% endfor %}
       </ul>
     </div>
 
     <div class="tab-content" id="groupTabContent">
-      <h3>Your Groups</h3>
-      <ul>
+      <h3>Your Group Chats <span id="groupUnreadTotal" class="unread-count"></span></h3>
+      <ul id="groupsList">
         {% for group in group_names %}
           <li>
-            <a href="#TODO_ChatGroup_{{ group }}">{{ group }}</a>
+            <a href="/group_chat/{{ group }}">{{ group }}</a>
+            <span class="unread-count" id="gunread_{{ group }}"></span>
           </li>
         {% endfor %}
       </ul>
@@ -162,11 +278,11 @@
   </div>
 
   <script>
-    // Simple tab logic
+    // ---------------------- TAB LOGIC ----------------------
     const privateTabButton = document.getElementById("privateTabButton");
-    const groupTabButton = document.getElementById("groupTabButton");
-    const privateTabContent = document.getElementById("privateTabContent");
-    const groupTabContent = document.getElementById("groupTabContent");
+    const groupTabButton   = document.getElementById("groupTabButton");
+    const privateTabContent= document.getElementById("privateTabContent");
+    const groupTabContent  = document.getElementById("groupTabContent");
 
     function showTab(tabName) {
       privateTabButton.classList.remove("active");
@@ -182,12 +298,319 @@
         groupTabContent.classList.add("active");
       }
     }
-
-    // Initialize default tab
     showTab("private");
-
     privateTabButton.addEventListener("click", () => showTab("private"));
     groupTabButton.addEventListener("click", () => showTab("group"));
+
+    // ---------------------- TOKEN + USERNAME ----------------------
+    let token    = {{ session['token']|tojson }};
+    let username = {{ username|tojson }};
+    let nodeName = {{ node_name|tojson }};  // **NEW: Receive node_name from template**
+
+    // ---------------------- REFRESH TOKEN IF NEEDED ----------------------
+    let refreshInProgress = false;
+    function refreshToken() {
+      if (refreshInProgress) return;
+      refreshInProgress = true;
+      fetch("/refresh_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.token) {
+          token = data.token;
+          console.log("Token refreshed to:", token);
+          return fetch("/update_token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: token })
+          });
+        }
+      })
+      .catch(e => console.error("refreshToken error:", e))
+      .finally(() => refreshInProgress = false);
+    }
+
+    // ---------------------- FETCH CHAT PARTNERS ----------------------
+    function fetchChatPartnersViaErlang() {
+      const formData = new FormData();
+      formData.append('node_name', nodeName);  // **UPDATED: Use dynamic nodeName**
+      formData.append('token', token);
+
+      return fetch('/get_chat_partners_via_erlang', {
+        method: 'POST',
+        body: formData
+      })
+      .then(resp => resp.json())
+      .then(data => {
+        if (data.error) {
+          console.error("Error from Erlang-based route (chat partners):", data.error);
+          throw new Error(data.error);
+        }
+        updateChatPartnersUI(data.chat_partners || []);
+      })
+      .catch(err => {
+        console.error("fetchChatPartnersViaErlang error:", err);
+        throw err; // rethrow to handle in chained calls
+      });
+    }
+
+    function updateChatPartnersUI(partners) {
+      const partnersList = document.getElementById("partnersList");
+      partnersList.innerHTML = "";
+      partners.forEach(partner => {
+        const li = document.createElement("li");
+        const a  = document.createElement("a");
+        a.href   = `/chat/${partner}`;
+        a.textContent = partner;
+
+        const unreadSpan = document.createElement("span");
+        unreadSpan.classList.add("unread-count");
+        unreadSpan.id = `unread_${partner}`;
+
+        li.appendChild(a);
+        li.appendChild(unreadSpan);
+        partnersList.appendChild(li);
+      });
+    }
+
+    // ---------------------- FETCH USER GROUPS ----------------------
+    function fetchUserGroupsViaErlang() {
+      const formData = new FormData();
+      formData.append('node_name', nodeName);  // **UPDATED: Use dynamic nodeName**
+      formData.append('token', token);
+
+      return fetch('/get_user_groups_via_erlang', {
+        method: 'POST',
+        body: formData
+      })
+      .then(resp => resp.json())
+      .then(data => {
+        if (data.error) {
+          console.error("Error from Erlang-based route (user groups):", data.error);
+          throw new Error(data.error);
+        }
+        // The backend returns "group_names" in the JSON
+        updateUserGroupsUI(data.group_names || []);
+      })
+      .catch(err => {
+        console.error("fetchUserGroupsViaErlang error:", err);
+        throw err; // rethrow to handle in chained calls
+      });
+    }
+
+    function updateUserGroupsUI(groups) {
+      const groupsList = document.getElementById("groupsList");
+      groupsList.innerHTML = "";
+      groups.forEach(group => {
+        const li = document.createElement("li");
+        const a  = document.createElement("a");
+        a.href   = `/group_chat/${group}`;
+        a.textContent = group;
+
+        const unreadSpan = document.createElement("span");
+        unreadSpan.classList.add("unread-count");
+        unreadSpan.id = `gunread_${group}`;
+
+        li.appendChild(a);
+        li.appendChild(unreadSpan);
+        groupsList.appendChild(li);
+      });
+    }
+
+    // ---------------------- FETCH UNREAD COUNTS ----------------------
+    function fetchUnreadCountsViaErlang() {
+      const formData = new FormData();
+      formData.append('node_name', nodeName);  // **UPDATED: Use dynamic nodeName**
+      formData.append('token', token);
+
+      return fetch('/get_unread_counts_via_erlang', {
+        method: 'POST',
+        body: formData
+      })
+      .then(resp => resp.json())
+      .then(data => {
+        if (data.error) {
+          console.error("Error from Erlang-based route (unread counts):", data.error);
+          throw new Error(data.error);
+        }
+        updateUnreadCounters(data.private_unread || {}, data.group_unread || {});
+      })
+      .catch(err => {
+        console.error("fetchUnreadCountsViaErlang error:", err);
+        throw err; // rethrow to handle in chained calls
+      });
+    }
+
+    function updateUnreadCounters(privateUnread, groupUnread) {
+      // 1) Private Chats
+      let totalPrivateUnread = 0;
+      for (const partner in privateUnread) {
+        const count = privateUnread[partner];
+        const span = document.getElementById(`unread_${partner}`);
+        if (span) {
+          if (count > 0) {
+            span.textContent = count;
+            span.classList.add("show");
+            totalPrivateUnread += count;
+          } else {
+            span.textContent = "";
+            span.classList.remove("show");
+          }
+        }
+      }
+      const privateUnreadTotal = document.getElementById("privateUnreadTotal");
+      if (totalPrivateUnread > 0) {
+        privateUnreadTotal.textContent = `(${totalPrivateUnread} new)`;
+        privateUnreadTotal.classList.add("show");
+      } else {
+        privateUnreadTotal.textContent = "";
+        privateUnreadTotal.classList.remove("show");
+      }
+
+      // 2) Group Chats
+      let totalGroupUnread = 0;
+      for (const group in groupUnread) {
+        const count = groupUnread[group];
+        const span  = document.getElementById(`gunread_${group}`);
+        if (span) {
+          if (count > 0) {
+            span.textContent = count;
+            span.classList.add("show");
+            totalGroupUnread += count;
+          } else {
+            span.textContent = "";
+            span.classList.remove("show");
+          }
+        }
+      }
+      const groupUnreadTotal = document.getElementById("groupUnreadTotal");
+      if (totalGroupUnread > 0) {
+        groupUnreadTotal.textContent = `(${totalGroupUnread} new)`;
+        groupUnreadTotal.classList.add("show");
+      } else {
+        groupUnreadTotal.textContent = "";
+        groupUnreadTotal.classList.remove("show");
+      }
+    }
+
+    // ---------------------- REAL-TIME SEARCH BAR LOGIC ----------------------
+    const userSearchInput   = document.getElementById("userSearchInput");
+    const userSearchResults = document.getElementById("userSearchResults");
+
+    function debounce(func, delay) {
+      let debounceTimer;
+      return function() {
+        const context = this;
+        const args = arguments;
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => func.apply(context, args), delay);
+      };
+    }
+
+    /**
+     * Erlangified User Search Function
+     * Sends a POST request to /search_users_via_erlang with node_name, token, and query.
+     * @param {string} query - The search query string.
+     * @returns {Promise} - Resolves with the search results or rejects with an error.
+     */
+    function erlangifyUserSearch(query) {
+      const formData = new FormData();
+      formData.append("node_name", nodeName);  // **UPDATED: Use dynamic nodeName**
+      formData.append("token", token);
+      formData.append("query", query);
+
+      return fetch("/search_users_via_erlang", {
+        method: "POST",
+        body: formData
+      })
+      .then(resp => resp.json());
+    }
+
+    userSearchInput.addEventListener("input", debounce(() => {
+      const query = userSearchInput.value.trim();
+      if (!query) {
+        userSearchResults.innerHTML = "";
+        userSearchResults.classList.remove("show");
+        return;
+      }
+
+      // Call the Erlangified search function
+      erlangifyUserSearch(query)
+        .then(data => {
+          if (data.error) {
+            console.error("Search via Erlang error:", data.error);
+            // Optionally display an error or fallback
+            userSearchResults.innerHTML = "<div style='padding: 0.75rem 1rem; color: red;'>Error searching users.</div>";
+            userSearchResults.classList.add("show");
+            return;
+          }
+
+          if (data.users && data.users.length) {
+            showSearchResults(data.users, query);
+          } else {
+            userSearchResults.innerHTML = "<div style='padding: 0.75rem 1rem; color: #888;'>No users found.</div>";
+            userSearchResults.classList.add("show");
+          }
+        })
+        .catch(err => {
+          console.error("Search error:", err);
+          userSearchResults.innerHTML = "<div style='padding: 0.75rem 1rem; color: red;'>Error searching users.</div>";
+          userSearchResults.classList.add("show");
+        });
+    }, 300));
+
+    function showSearchResults(users, query) {
+      userSearchResults.innerHTML = "";
+      users.forEach(u => {
+        const div   = document.createElement("div");
+        const index = u.toLowerCase().indexOf(query.toLowerCase());
+        if (index !== -1) {
+          const beforeMatch = u.substring(0, index);
+          const matchText   = u.substring(index, index + query.length);
+          const afterMatch  = u.substring(index + query.length);
+          div.innerHTML     = `${beforeMatch}<strong>${matchText}</strong>${afterMatch}`;
+        } else {
+          div.textContent   = u;
+        }
+        div.addEventListener("click", () => {
+          window.location.href = `/chat/${u}`;
+        });
+        userSearchResults.appendChild(div);
+      });
+      userSearchResults.classList.add("show");
+    }
+
+    document.addEventListener("click", function(event) {
+      const isClickInside = userSearchInput.contains(event.target) || userSearchResults.contains(event.target);
+      if (!isClickInside) {
+        userSearchResults.innerHTML = "";
+        userSearchResults.classList.remove("show");
+      }
+    });
+
+    // ---------------------- INITIAL FETCH + POLLING ----------------------
+    function initialFetch() {
+      // Chain them so they run in order and handle any errors
+      fetchChatPartnersViaErlang()
+        .then(() => fetchUserGroupsViaErlang())
+        .then(() => fetchUnreadCountsViaErlang())
+        .catch(err => console.error("initialFetch chain error:", err));
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      initialFetch();
+
+      // Refresh the data every 5 seconds
+      setInterval(() => {
+        fetchChatPartnersViaErlang()
+          .then(() => fetchUserGroupsViaErlang())
+          .then(() => fetchUnreadCountsViaErlang())
+          .catch(err => console.error("5-second chain error:", err));
+      }, 5000);
+    });
   </script>
 </body>
 </html>

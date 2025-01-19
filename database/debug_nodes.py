@@ -13,7 +13,7 @@ group_messages_collection = db["group_messages"]
 
 
 # Print all nodes in the collection
-for node in users_collection.find():
+for node in groups_collection.find():
     print(node)
 
 # result = nodes_collection.delete_many({})  # Corrected method name
