@@ -3,7 +3,7 @@ import re
 import datetime
 import logging
 import secrets
-from flask import Flask, request, jsonify, g, send_from_directory, render_template, session, redirect, url_for, flash
+from flask import Flask, request, jsonify, g, send_from_directory, render_template, session, redirect, url_for, flash, current_app
 from pymongo import MongoClient
 from urllib.parse import unquote
 import bcrypt
@@ -20,6 +20,7 @@ import requests
 import dateutil.parser
 import tempfile
 import json
+import glob
 
 
 app = Flask(__name__)
@@ -484,46 +485,53 @@ def internal_get_messages():
         return jsonify({"error": "Failed to retrieve messages."}), 500
 
 
-@app.route('/delete_message', methods=['POST'])
-def delete_message():
+@app.route('/internal_delete_message', methods=['POST'])
+def internal_delete_message():
+    """
+    This is called internally by Erlang. It directly removes the message from MongoDB.
+    """
     data = request.json
-    token = data.get('token')
-    message_id = data.get('message_id')
-    # You can ignore `delete_for_both` for now if you truly want to remove it.
+    token = data.get("token")
+    message_id = data.get("message_id")
+
+    if not token or not message_id:
+        return jsonify({"error": "Token and message_id are required."}), 400
 
     username = validate_token(token)
     if not username:
         return jsonify({"error": "Invalid or missing token."}), 401
 
-    msg = messages_collection.find_one({"_id": ObjectId(message_id)})
-    if not msg:
+    # Find the message
+    try:
+        msg_obj_id = ObjectId(message_id)
+    except:
+        return jsonify({"error": "Invalid message_id."}), 400
+
+    message_doc = messages_collection.find_one({"_id": msg_obj_id})
+    if not message_doc:
         return jsonify({"error": "Message not found."}), 404
 
-    # Optionally check if user is the sender or receiver
-    # if username not in [msg.get("sender"), msg.get("receiver")]:
-    #    return jsonify({"error": "Not authorized to delete this message."}), 403
+    # Ensure the current user is the sender
+    if message_doc['sender'] != username:
+        return jsonify({"error": "You can only delete your own messages."}), 403
 
-    messages_collection.delete_one({"_id": ObjectId(message_id)})
-    return jsonify({"message": "Message permanently deleted."}), 200
+    # Delete the message from MongoDB
+    try:
+        messages_collection.delete_one({"_id": msg_obj_id})
+        return jsonify({"message": "Message deleted successfully."}), 200
+    except Exception as e:
+        return jsonify({"error": "Failed to delete message."}), 500
 
 
-@app.route('/edit_message', methods=['POST'])
-def edit_message():
+@app.route('/internal_edit_message', methods=['POST'])
+def internal_edit_message():
     """
-    Expects JSON:
-      {
-        "token": "...",
-        "message_id": "...",
-        "new_text": "..."
-      }
-
-    Validates that the user (from token) is the sender of the message.
-    Updates the message text in the database and marks it as edited.
+    This is called internally by Erlang. It directly updates the MongoDB message.
     """
     data = request.json
-    token = data.get('token')
-    message_id = data.get('message_id')
-    new_text = data.get('new_text')
+    token = data.get("token")
+    message_id = data.get("message_id")
+    new_text = data.get("new_text")
 
     if not token or not message_id or not new_text:
         return jsonify({"error": "Token, message_id, and new_text are required."}), 400
@@ -555,10 +563,8 @@ def edit_message():
                 "edited": True  # Track that this message was edited
             }}
         )
-        logger.info(f"User '{username}' edited message '{message_id}': {new_text}")
         return jsonify({"message": "Message edited successfully."}), 200
     except Exception as e:
-        logger.error(f"Error editing message '{message_id}': {str(e)}")
         return jsonify({"error": "Failed to edit message."}), 500
 
 
@@ -1175,10 +1181,37 @@ def group_chat(group_name):
 @app.route('/profile_pictures/<filename>', methods=['GET'])
 def serve_profile_picture(filename):
     try:
-        return send_from_directory('profile_pictures', filename)
+        return send_from_directory(os.path.join(current_app.root_path, 'profile_pictures'), filename)
     except Exception as e:
         logger.error(f"Error serving profile picture '{filename}': {str(e)}")
         return jsonify({"error": "Profile picture not found."}), 404
+
+
+@app.route('/internal_get_profile_picture', methods=['POST'])
+def internal_get_profile_picture():
+    """
+    Internal API to fetch a user's profile picture.
+    """
+    data = request.json
+    token = data.get("token")
+    username = data.get("username")
+
+    if not token or not username:
+        return jsonify({"error": "Token and username are required."}), 400
+
+    validated_user = validate_token(token)
+    if not validated_user:
+        return jsonify({"error": "Invalid or missing token."}), 401
+
+    user_doc = users_collection.find_one({"username": username})
+    if not user_doc:
+        return jsonify({"error": "User not found."}), 404
+
+    # Fetch the correct field from MongoDB
+    profile_picture_url = user_doc.get("profile_picture_url", "/profile_pictures/default_profile.png")
+
+    return jsonify({"profile_picture": profile_picture_url}), 200
+
 
 @app.route('/set_profile_picture', methods=['POST'])
 def set_profile_picture():
@@ -1285,8 +1318,6 @@ def parse_erlang_ok_message(stdout_str):
 
             # Step 3: Remove '#' before '{' to fix JSON object notation
             json_str = json_str.replace('#{', '{')
-
-            # print(f"DEBUG: Converted JSON string: {{{json_str}}}")  # Log the converted string
 
             # Wrap with braces to form a valid JSON object
             json_str = "{" + json_str + "}"
@@ -1454,9 +1485,20 @@ def internal_set_profile_picture():
         return jsonify({"error": "Invalid or expired token."}), 401
 
     try:
-        allowed_exts = ['png','jpg','jpeg','gif','bmp']
-        if extension.lower() not in allowed_exts:
+        extension = extension.lower()
+        if extension not in ALLOWED_EXTENSIONS:
             return jsonify({"error": f"Unsupported extension: {extension}"}), 400
+
+        # Define directory
+        profile_dir = "profile_pictures"
+        os.makedirs(profile_dir, exist_ok=True)
+
+        # Delete previous profile pictures of the user with supported formats
+        old_pictures = glob.glob(os.path.join(profile_dir, f"{username}.*"))
+        for old_pic in old_pictures:
+            if old_pic.split('.')[-1].lower() in ALLOWED_EXTENSIONS:
+                os.remove(old_pic)
+                logger.info(f"Deleted old profile picture: {old_pic}")
 
         # Clean up any possible whitespace/newlines
         base64_clean = image_data.strip().replace('\n', '').replace('\r', '')
@@ -1466,14 +1508,16 @@ def internal_set_profile_picture():
         if missing_padding < 4:
             base64_clean += "=" * missing_padding
 
+        # Decode base64 image data
         img_bytes = base64.b64decode(base64_clean)
 
+        # Save new profile picture
         filename = f"{username}.{extension}"
-        os.makedirs("profile_pictures", exist_ok=True)
-        file_path = os.path.join("profile_pictures", filename)
+        file_path = os.path.join(profile_dir, filename)
         with open(file_path, "wb") as f:
             f.write(img_bytes)
 
+        # Update profile picture URL in database
         image_url = f"http://localhost:5000/profile_pictures/{filename}"
         users_collection.update_one(
             {"username": username},
@@ -1482,6 +1526,7 @@ def internal_set_profile_picture():
 
         logger.info(f"Profile picture updated for user '{username}'.")
         return jsonify({"message": "Profile picture updated successfully.", "image_url": image_url}), 200
+
     except Exception as e:
         logger.error(f"Error updating profile picture for user '{username}': {str(e)}")
         return jsonify({"error": "Failed to update profile picture."}), 500
@@ -1942,6 +1987,47 @@ def set_profile_picture_via_erlang():
         return jsonify({"error": "Failed to process image data."}), 500
 
 
+@app.route('/get_profile_picture_via_erlang', methods=['POST'])
+def get_profile_picture_via_erlang():
+    """
+    Calls Erlang to fetch the profile picture for a given user.
+    """
+    try:
+        data = request.json
+        node_name = data.get("node_name")
+        user_token = data.get("token")
+        username = data.get("username")
+
+        if not node_name or not user_token or not username:
+            return jsonify({"error": "Missing required parameters."}), 400
+
+        args = [user_token, username]
+        result = call_erlang_function(node_name=node_name, function="get_profile_picture", args=args)
+
+        stdout_str = result.get("stdout", "").strip()
+
+        if not stdout_str:
+            return jsonify({"error": "Empty response from Erlang."}), 500
+
+        parsed_response = parse_erlang_ok_message(stdout_str)
+
+        if isinstance(parsed_response, dict):
+            profile_picture = parsed_response.get("profile_picture")
+        elif isinstance(parsed_response, str):
+            profile_picture = parsed_response
+        else:
+            return jsonify({"error": "Invalid response format from Erlang."}), 500
+
+        # Ensure it's a valid profile picture URL
+        if not profile_picture or profile_picture.endswith("default_profile.png"):
+            return jsonify({"profile_picture": "/profile_pictures/default_profile.png"}), 200
+
+        return jsonify({"profile_picture": profile_picture}), 200
+
+    except Exception as e:
+        return jsonify({"error": "Internal server error"}), 500
+
+
 @app.route('/create_group_via_erlang', methods=['POST'])
 def create_group_via_erlang():
     node_name = request.form.get('node_name')
@@ -2078,6 +2164,127 @@ def get_messages_via_erlang():
         return jsonify({"error": "Internal server error"}), 500
 
 
+@app.route('/check_block_status_via_erlang', methods=['POST'])
+def check_block_status_via_erlang():
+    try:
+        data = request.json
+        node_name = data.get("node_name")
+        user_token = data.get("token")
+        other_user = data.get("other_user")
+
+        if not node_name or not user_token or not other_user:
+            return jsonify({"error": "Missing required parameters."}), 400
+
+        args = [user_token, other_user]
+        result = call_erlang_function(node_name=node_name, function="check_block_status", args=args)
+
+        stdout_str = result.get("stdout", "")
+
+        if not stdout_str.strip():
+            return jsonify({"error": "Empty response from Erlang."}), 500
+
+        parsed_response = parse_erlang_ok_message(stdout_str)
+
+        if isinstance(parsed_response, dict):
+            return jsonify(parsed_response), 200
+        elif isinstance(parsed_response, str):
+            return jsonify({"message": parsed_response}), 200
+        else:
+            return jsonify({"error": "Invalid response format from Erlang."}), 500
+
+    except Exception as e:
+        print(f"ERROR: Exception in check_block_status_via_erlang: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/edit_message_via_erlang', methods=['POST'])
+def edit_message_via_erlang():
+    """
+    Expects JSON:
+      {
+        "node_name": "...",
+        "token": "...",
+        "message_id": "...",
+        "new_text": "..."
+      }
+
+    Calls the Erlang function `edit_message/3` and returns its response.
+    """
+    try:
+        data = request.json
+        node_name = data.get("node_name")
+        user_token = data.get("token")
+        message_id = data.get("message_id")
+        new_text = data.get("new_text")
+
+        if not node_name or not user_token or not message_id or not new_text:
+            return jsonify({"error": "Missing required parameters."}), 400
+
+        args = [user_token, message_id, new_text]
+        result = call_erlang_function(node_name=node_name, function="edit_message", args=args)
+
+        stdout_str = result.get("stdout", "")
+
+        if not stdout_str.strip():
+            return jsonify({"error": "Empty response from Erlang."}), 500
+
+        parsed_response = parse_erlang_ok_message(stdout_str)
+
+        if isinstance(parsed_response, dict):
+            return jsonify(parsed_response), 200
+        elif isinstance(parsed_response, str):
+            return jsonify({"message": parsed_response}), 200
+        else:
+            return jsonify({"error": "Invalid response format from Erlang."}), 500
+
+    except Exception as e:
+        print(f"ERROR: Exception in edit_message_via_erlang: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route('/delete_message_via_erlang', methods=['POST'])
+def delete_message_via_erlang():
+    """
+    Expects JSON:
+      {
+        "node_name": "...",
+        "token": "...",
+        "message_id": "..."
+      }
+
+    Calls the Erlang function `delete_message/2` and returns its response.
+    """
+    try:
+        data = request.json
+        node_name = data.get("node_name")
+        user_token = data.get("token")
+        message_id = data.get("message_id")
+
+        if not node_name or not user_token or not message_id:
+            return jsonify({"error": "Missing required parameters."}), 400
+
+        args = [user_token, message_id]
+        result = call_erlang_function(node_name=node_name, function="delete_message", args=args)
+
+        stdout_str = result.get("stdout", "")
+
+        if not stdout_str.strip():
+            return jsonify({"error": "Empty response from Erlang."}), 500
+
+        parsed_response = parse_erlang_ok_message(stdout_str)
+
+        if isinstance(parsed_response, dict):
+            return jsonify(parsed_response), 200
+        elif isinstance(parsed_response, str):
+            return jsonify({"message": parsed_response}), 200
+        else:
+            return jsonify({"error": "Invalid response format from Erlang."}), 500
+
+    except Exception as e:
+        print(f"ERROR: Exception in delete_message_via_erlang: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+
 def format_time_for_display(dt):
     """
     dt is a datetime object in UTC. 
@@ -2103,49 +2310,29 @@ def chat_user(other_user):
     if not token or not username:
         return redirect(url_for('index'))
 
-    # 1) Get other user’s profile
-    # (We can do a direct GET or use the node_manager get_profile_picture if you want.)
-    profile_url = None
+    # 1) Get other user's status via Erlang
+    other_user_display_status = ""
     try:
-        resp = requests.get("http://localhost:5000/get_profile_picture",
-                            params={"token": token, "username": other_user})
-        if resp.status_code == 200:
-            data = resp.json()
-            profile_url = data.get("image_url")
-        else:
-            profile_url = "/profile_pictures/default_profile.png"
-    except:
-        profile_url = "/profile_pictures/default_profile.png"
-
-    # 2) Get other user’s status
-    # e.g. GET /get_user_status?token=...&username=other_user
-    other_user_display_status = ""  # the final string to display
-    try:
-        stat_resp = requests.get("http://localhost:5000/get_user_status",
-                                params={"token": token, "username": other_user})
+        stat_resp = requests.post("http://localhost:5000/get_user_status_via_erlang",
+                                  json={"token": token, "node_name": node_name, "username": other_user})
         if stat_resp.status_code == 200:
             st_data = stat_resp.json()
             if st_data["status"] == "online":
                 other_user_display_status = "online"
             else:
-                # offline => st_data["last_online"] is an ISO string?
                 last_s = st_data.get("last_online")
-                # parse
                 dt = dateutil.parser.isoparse(last_s) if last_s else None
                 formatted = format_time_for_display(dt)
                 other_user_display_status = f"last seen {formatted}"
         else:
-            # error fallback
-            other_user_display_status = ""
+            other_user_display_status = "Status unavailable"
     except:
-        other_user_display_status = ""
-
+        other_user_display_status = "Status unavailable"
 
     return render_template("chat_user.html",
                         username=username,
                         node_name=node_name,
                         other_user=other_user,
-                        other_user_profile=profile_url,
                         other_user_status=other_user_display_status)
 
 @app.template_filter('to_datetime')
@@ -2193,14 +2380,12 @@ def create_group_page():
     return render_template("create_group.html", node_name=node_name, token=session['token'], username=session['username'])
 
 
-@app.route('/check_block_status', methods=['GET'])
-def check_block_status():
-    """
-    Query params: token, other_user
-    Returns JSON: { "we_blocked_them": bool, "they_blocked_us": bool }
-    """
-    token = request.args.get('token')
-    other_user = request.args.get('other_user')
+@app.route('/internal_check_block_status', methods=['POST'])
+def internal_check_block_status():
+    data = request.json
+    token = data.get("token")
+    other_user = data.get("other_user")
+
     if not token or not other_user:
         return jsonify({"error": "Token and other_user are required."}), 400
 

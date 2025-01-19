@@ -1,10 +1,10 @@
-<!-- templates/chat_user.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Chat with {{ other_user }}</title>
   <style>
+    /* [Existing CSS Styles] */
     body {
       font-family: Arial, sans-serif;
       background-color: #f4f4f4;
@@ -264,11 +264,8 @@
   <div class="chat-container">
     <!-- Chat Header (profile, name, block button) -->
     <div class="chat-header">
-      {% if other_user_profile %}
-        <img src="{{ other_user_profile }}" alt="Profile Picture" />
-      {% else %}
-        <img src="/profile_pictures/default_profile.png" alt="No Profile Picture" />
-      {% endif %}
+      <!-- Profile Picture will be fetched via JavaScript -->
+      <img src="/profile_pictures/default_profile.png" alt="Profile Picture" id="profilePicture" />
       <div>
         <h2>{{ other_user }}</h2>
         <span class="status">
@@ -281,7 +278,7 @@
           {% endif %}
         </span>
       </div>
-      <button class="block-btn" id="blockBtn"></button>
+      <button class="block-btn" id="blockBtn">Block</button>
     </div>
 
     <!-- Reply Banner -->
@@ -303,10 +300,47 @@
   </div>
 
   <script>
+    /* ---------------------- Request Queue Implementation ---------------------- */
+    let requestQueue = []; // Stores pending operations
+    let isProcessing = false; // Indicates if an operation is in progress
+
+    /**
+     * Processes the next operation in the queue.
+     */
+    async function processQueue() {
+      if (isProcessing || requestQueue.length === 0) return;
+
+      isProcessing = true;
+      const operation = requestQueue.shift(); // Get the first operation
+
+      try {
+        await operation(); // Execute the function stored in the queue
+      } catch (err) {
+        console.error("Error processing request:", err);
+      }
+
+      isProcessing = false;
+
+      // Continue processing the queue
+      processQueue();
+    }
+
+    /**
+     * Adds an operation to the queue.
+     * @param {Function} operation - An asynchronous function representing the operation.
+     */
+    function queueRequest(operation) {
+      requestQueue.push(operation);
+      console.log("Queued operation:", operation.name || "Anonymous Function");
+      processQueue(); // Start processing if not already running
+    }
+    /* -------------------------------------------------------------------------- */
+
+    /* ----------------------------- Chat Functionality ---------------------------- */
     let token = "{{ session['token'] }}";
     const otherUser = "{{ other_user }}";
     const currentUser = "{{ username }}";
-    let nodeName = {{ node_name|tojson }};;
+    let nodeName = {{ node_name|tojson }};
 
     let refreshInProgress = false;
     let isBlocked = false;
@@ -315,6 +349,9 @@
     let currentReplyMsgId = null;
     let currentReplyPreview = null;
 
+    /**
+     * Updates the state of the send button based on block status.
+     */
     function updateSendButton() {
       const sendBtn = document.getElementById("sendBtn");
       if (isBlocked || otherSideBlockedUs) {
@@ -324,64 +361,89 @@
       }
     }
 
-    function refreshToken() {
-      if (refreshInProgress) return Promise.resolve();
+    /**
+     * Refreshes the authentication token.
+     */
+    async function refreshToken() {
+      if (refreshInProgress) return;
       refreshInProgress = true;
-      return fetch("/refresh_token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token })
-      })
-      .then(resp => resp.json())
-      .then(data => {
+      console.log("Refreshing token...");
+      try {
+        const resp = await fetch("/refresh_token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: token })
+        });
+        const data = await resp.json();
         if (data.token) {
           token = data.token;
-          return fetch("/update_token", {
+          console.log("Token refreshed.");
+          await fetch("/update_token", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token: token })
           });
+        } else {
+          console.warn("No token received during refresh.");
         }
-      })
-      .catch(err => console.error("refreshToken error:", err))
-      .finally(() => {
+      } catch (err) {
+        console.error("refreshToken error:", err);
+      } finally {
         refreshInProgress = false;
-      });
+      }
     }
 
-    function refreshMessages() {
+    /**
+     * Fetches and renders chat messages.
+     */
+    async function refreshMessages() {
       const payload = {
         node_name: nodeName,
         token: token,
         other_user: otherUser
       };
     
-      return fetch("/get_messages_via_erlang", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      })
-      .then(response => {
+      try {
+        const response = await fetch("/get_messages_via_erlang", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+    
+        if (response.status === 401) {
+          console.warn("Unauthorized. Refreshing token and retrying fetchMessages.");
+          await refreshToken();
+          // Re-queue the fetchMessages operation after token refresh
+          queueRequest(refreshMessages);
+          return;
+        }
+    
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
-        return response.json();
-      })
-      .then(data => {
+    
+        const data = await response.json();
         if (!data || typeof data !== "object" || !data.messages) {
           console.error("Invalid JSON response from server:", data);
           return;
         }
         renderMessages(data.messages);
-      })
-      .catch(err => {
+      } catch (err) {
         console.error("refreshMessages error:", err);
-        return Promise.reject(err);
-      });
+        throw err; // Re-throw to handle in the queue
+      }
     }
 
+    /**
+     * Renders messages in the chat area.
+     * @param {Array} messages - Array of message objects.
+     */
     function renderMessages(messages) {
       const container = document.getElementById("messages-area");
+      
+      // Check if the user is near the bottom before updating
+      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+      
       container.innerHTML = "";
 
       messages.forEach(msg => {
@@ -476,9 +538,18 @@
         container.appendChild(clearDiv);
       });
 
-      container.scrollTop = container.scrollHeight;
+      // Restore scroll position if the user was at the bottom
+      if (isAtBottom) {
+        container.scrollTop = container.scrollHeight;
+      }
+      // Else, maintain the current scroll position
     }
 
+    /**
+     * Initiates a reply to a specific message.
+     * @param {String} msgId - The ID of the message being replied to.
+     * @param {String} msgText - The text of the message being replied to.
+     */
     function startReply(msgId, msgText) {
       currentReplyMsgId = msgId;
       currentReplyPreview = msgText.slice(0, 80);
@@ -487,260 +558,484 @@
       document.getElementById("replyPreviewText").textContent = currentReplyPreview;
     }
 
+    /**
+     * Cancels the current reply action.
+     */
     function cancelReply() {
       currentReplyMsgId = null;
       currentReplyPreview = null;
       document.getElementById("replyBanner").style.display = "none";
     }
 
+    /**
+     * Sends a new message.
+     * @returns {Boolean} - Prevents default form submission.
+     */
     function sendMessage() {
       const msgInput = document.getElementById("msgInput");
       const msgText = msgInput.value.trim();
       if (!msgText) return false;
 
-      const payload = { token, receiver: otherUser };
-      if (msgText) payload.message = msgText;
-      if (currentReplyMsgId) payload.reply_to_msg_id = currentReplyMsgId;
-      if (currentReplyPreview) payload.reply_preview = currentReplyPreview;
+      // Define the operation as an async function
+      const operation = async () => {
+        try {
+          const payload = { token, receiver: otherUser, message: msgText };
+          if (currentReplyMsgId) {
+            payload.reply_to_msg_id = currentReplyMsgId;
+            payload.reply_preview = currentReplyPreview;
+          }
 
-      fetch("/send_message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      })
-      .then(r => {
-        if (r.status === 401) throw new Error("401");
-        return r.json();
-      })
-      .then(data => {
-        if (data.error) {
-          alert("Error sending message: " + data.error);
-        } else {
-          msgInput.value = "";
-          cancelReply();
-          refreshMessages();
-        }
-      })
-      .catch(err => {
-        if (err.message === "401") {
-          refreshToken().then(() => sendMessage());
-        } else {
-          console.error("send_message error:", err);
-        }
-      });
+          console.log("Sending message:", payload);
 
-      return false;
+          const response = await fetch("/send_message", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.status === 401) {
+            console.warn("Unauthorized. Refreshing token and re-queuing sendMessage.");
+            await refreshToken();
+            queueRequest(operation); // Re-queue the send operation after token refresh
+            return;
+          }
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.error) {
+              alert("Error sending message: " + data.error);
+            } else {
+              console.log("Message sent successfully:", data);
+              msgInput.value = "";
+              cancelReply();
+              await refreshMessages();
+            }
+          } else {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+        } catch (err) {
+          console.error("sendMessage error:", err);
+          alert("Failed to send message.");
+        }
+      };
+
+      // Queue the send operation
+      queueRequest(operation);
+
+      return false; // Prevent default form submission
     }
 
+    /**
+     * Deletes a message.
+     * @param {String} msgId - The ID of the message to delete.
+     */
     function deleteMessage(msgId) {
-      fetch("/delete_message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, message_id: msgId })
-      })
-      .then(r => {
-        if (r.status === 401) throw new Error("401");
-        return r.json();
-      })
-      .then(data => {
-        if (data.error) {
-          alert("Error deleting message: " + data.error);
-        } else {
-          refreshMessages();
-        }
-      })
-      .catch(err => {
-        if (err.message === "401") {
-          refreshToken().then(() => deleteMessage(msgId));
-        } else {
+      const confirmDelete = confirm("Are you sure you want to delete this message?");
+      if (!confirmDelete) return;
+
+      // Define the operation as an async function
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            message_id: msgId
+          };
+
+          console.log("Deleting message:", payload);
+
+          const response = await fetch("/delete_message_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.status === 401) {
+            console.warn("Unauthorized. Refreshing token and re-queuing deleteMessage.");
+            await refreshToken();
+            queueRequest(operation); // Re-queue the delete operation after token refresh
+            return;
+          }
+
+          if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+          const data = await response.json();
+          if (data.error) {
+            alert("Error deleting message: " + data.error);
+          } else {
+            console.log("Message deleted successfully:", data);
+            await refreshMessages();  // Refresh the chat messages after deletion
+          }
+        } catch (err) {
           console.error("deleteMessage error:", err);
+          alert("Failed to delete message.");
         }
-      });
+      };
+
+      // Queue the delete operation
+      queueRequest(operation);
     }
 
+    /**
+     * Edits a message.
+     * @param {String} msgId - The ID of the message to edit.
+     * @param {String} oldText - The current text of the message.
+     */
     function editMessage(msgId, oldText) {
       const newText = prompt("Edit your message:", oldText);
       if (!newText || newText.trim() === oldText) return;
 
-      fetch("/edit_message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, message_id: msgId, new_text: newText.trim() })
-      })
-      .then(r => {
-        if (r.status === 401) throw new Error("401");
-        return r.json();
-      })
-      .then(data => {
-        if (data.error) {
-          alert("Error editing message: " + data.error);
-        } else {
-          refreshMessages();
-        }
-      })
-      .catch(err => {
-        if (err.message === "401") {
-          refreshToken().then(() => editMessage(msgId, oldText));
-        } else {
+      // Define the operation as an async function
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            message_id: msgId,
+            new_text: newText.trim()
+          };
+
+          console.log("Editing message:", payload);
+
+          const response = await fetch("/edit_message_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.status === 401) {
+            console.warn("Unauthorized. Refreshing token and re-queuing editMessage.");
+            await refreshToken();
+            queueRequest(operation); // Re-queue the edit operation after token refresh
+            return;
+          }
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.error) {
+              alert("Error editing message: " + data.error);
+            } else {
+              console.log("Message edited successfully:", data);
+              await refreshMessages();  // Refresh the messages after editing
+            }
+          } else {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+        } catch (err) {
           console.error("editMessage error:", err);
           alert("Failed to edit message.");
         }
-      });
+      };
+
+      // Queue the edit operation
+      queueRequest(operation);
     }
 
+    /**
+     * Toggles the block status of the other user.
+     */
     function toggleBlock() {
       if (!nodeName) {
-          console.error("Node name is missing! Cannot proceed.");
-          alert("Error: Unable to process request due to missing node name.");
-          return;
+        console.error("Node name is missing! Cannot proceed.");
+        alert("Error: Unable to process request due to missing node name.");
+        return;
       }
-  
-      const payload = {
-          node_name: nodeName,
-          token: token,
-          other_user: otherUser
-      };
-  
-      fetch("/toggle_block_user_via_erlang", {
-          method: "POST",
-          headers: {
-              "Content-Type": "application/json"  // Ensure JSON format
-          },
-          body: JSON.stringify(payload)  // Convert JS object to JSON string
-      })
-      .then(resp => resp.json())  // Expect JSON response
-      .then(data => {
-          if (data.error) {
-              alert("Error: " + data.error);
-          } else {
-              isBlocked = !isBlocked;  // Toggle block state
-              updateBlockButton();  // Update UI
-              updateSendButton();
-              alert(data.message);
+
+      // Define the operation as an async function
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            other_user: otherUser
+          };
+
+          console.log("Toggling block status:", payload);
+
+          const resp = await fetch("/toggle_block_user_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          if (resp.status === 401) {
+            console.warn("Unauthorized. Refreshing token and re-queuing toggleBlock.");
+            await refreshToken();
+            queueRequest(operation); // Re-queue the toggle block operation after token refresh
+            return;
           }
-      })
-      .catch(err => {
+
+          if (!resp.ok) {
+            throw new Error(`HTTP error! Status: ${resp.status}`);
+          }
+
+          const data = await resp.json();
+          if (data.error) {
+            alert("Error: " + data.error);
+          } else {
+            console.log("Block status toggled successfully:", data);
+            isBlocked = !isBlocked;  // Toggle block state
+            updateBlockButton();  // Update UI
+            updateSendButton();
+            alert(data.message);
+          }
+        } catch (err) {
           console.error("toggleBlock error:", err);
-      });
+          alert("Failed to toggle block status.");
+        }
+      };
+
+      // Queue the toggle block operation
+      queueRequest(operation);
     }
 
-    function checkBlockStatus() {
-      return fetch(`/check_block_status?token=${encodeURIComponent(token)}&other_user=${encodeURIComponent(otherUser)}`)
-        .then(r => {
-          if (!r.ok) throw new Error(`HTTP error! Status: ${r.status}`);
-          return r.json();
-        })
-        .then(data => {
-          isBlocked = data.we_blocked_them;
-          otherSideBlockedUs = data.they_blocked_us;
-          updateBlockButton();
-          updateSendButton();
-        })
-        .catch(err => {
-          console.error("checkBlockStatus error:", err);
-          return Promise.reject(err); // Ensure it's still a Promise
+    /**
+     * Checks the block status between users.
+     */
+    async function checkBlockStatus() {
+      if (!nodeName) {
+        console.error("Node name is missing! Cannot proceed.");
+        return;
+      }
+
+      const payload = {
+        node_name: nodeName,
+        token: token,
+        other_user: otherUser
+      };
+
+      console.log("Checking block status:", payload);
+
+      try {
+        const response = await fetch("/check_block_status_via_erlang", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
         });
+
+        if (response.status === 401) {
+          console.warn("Unauthorized. Refreshing token and re-queuing checkBlockStatus.");
+          await refreshToken();
+          queueRequest(checkBlockStatus); // Re-queue the check block status operation after token refresh
+          return;
+        }
+
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+        const data = await response.json();
+        if (!data || typeof data !== "object") {
+          console.error("Invalid JSON response from Erlang:", data);
+          return;
+        }
+        isBlocked = data.we_blocked_them;
+        otherSideBlockedUs = data.they_blocked_us;
+        console.log("Block status updated:", { isBlocked, otherSideBlockedUs });
+        updateBlockButton();
+        updateSendButton();
+      } catch (err) {
+        console.error("checkBlockStatus error:", err);
+        throw err; // Re-throw to handle in the queue
+      }
     }
 
-      function updateBlockButton() {
-        const btn = document.getElementById("blockBtn");
-        btn.textContent = isBlocked ? "Unblock" : "Block";
+    /**
+     * Updates the text of the block/unblock button.
+     */
+    function updateBlockButton() {
+      const btn = document.getElementById("blockBtn");
+      btn.textContent = isBlocked ? "Unblock" : "Block";
     }
 
-    function refreshUserStatus() {
+    /**
+     * Refreshes the user's online status.
+     */
+    async function refreshUserStatus() {
       if (!nodeName) {
         console.error("Error: Node name is missing!");
-        return Promise.resolve();  // Return a resolved Promise if missing node
+        return;  // Do not throw to allow queue to continue
       }
-    
+
       const payload = {
         node_name: nodeName,
         token: token,
         username: otherUser
       };
-    
-      return fetch("/get_user_status_via_erlang", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      })
-      .then(response => {
+
+      console.log("Refreshing user status:", payload);
+
+      try {
+        const response = await fetch("/get_user_status_via_erlang", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.status === 401) {
+          console.warn("Unauthorized. Refreshing token and re-queuing refreshUserStatus.");
+          await refreshToken();
+          queueRequest(refreshUserStatus); // Re-queue the refresh user status operation after token refresh
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
-        return response.json();
-      })
-      .then(data => {
+
+        const data = await response.json();
         if (!data || typeof data !== "object") {
           console.error("Invalid JSON response from server:", data);
           return;
         }
         updateStatusUI(data);
-      })
-      .catch(err => {
+      } catch (err) {
         console.error("refreshUserStatus error:", err);
-        return Promise.reject(err);
-      });
+        throw err; // Re-throw to handle in the queue
+      }
     }
 
+    /**
+     * Updates the user's status in the UI.
+     * @param {Object} stData - Status data from the server.
+     */
     function updateStatusUI(stData) {
       const statusSpan = document.querySelector(".chat-header .status");
-  
+
       if (!stData || !stData.status) {
-          statusSpan.textContent = "Status unavailable";
-          statusSpan.style.color = "#555";
-          return;
+        statusSpan.textContent = "Status unavailable";
+        statusSpan.style.color = "#555";
+        return;
       }
-  
+
       if (stData.status === "online") {
-          statusSpan.textContent = "Online";
-          statusSpan.style.color = "green";
+        statusSpan.textContent = "Online";
+        statusSpan.style.color = "green";
       } else {
-          let lastOnline = stData.last_online;
-          if (!lastOnline || lastOnline === "Never") {
-              statusSpan.textContent = "Offline";
-              statusSpan.style.color = "gray";
+        let lastOnline = stData.last_online;
+        if (!lastOnline || lastOnline === "Never") {
+          statusSpan.textContent = "Offline";
+          statusSpan.style.color = "gray";
+        } else {
+          const dt = new Date(lastOnline);
+          const now = new Date();
+          const diffMs = now - dt;
+          const oneDayMs = 24 * 60 * 60 * 1000;
+          let displayTime = "";
+
+          if (diffMs < oneDayMs) {
+            displayTime = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           } else {
-              const dt = new Date(lastOnline);
-              const now = new Date();
-              const diffMs = now - dt;
-              const oneDayMs = 24 * 60 * 60 * 1000;
-              let displayTime = "";
-  
-              if (diffMs < oneDayMs) {
-                  displayTime = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-              } else {
-                  displayTime = dt.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) +
-                      ", " +
-                      dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-              }
-              statusSpan.textContent = "last seen " + displayTime;
-              statusSpan.style.color = "gray";
+            displayTime = dt.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) +
+                ", " +
+                dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           }
+          statusSpan.textContent = "last seen " + displayTime;
+          statusSpan.style.color = "gray";
+        }
       }
     }
 
-    function initialFetchChat() {
-      checkBlockStatus()
-        .then(() => refreshMessages())
-        .then(() => refreshUserStatus())
-        .catch(err => console.error("initialFetchChat chain error:", err));
+    /**
+     * Fetches the user's profile picture.
+     */
+    function fetchProfilePicture() {
+      const payload = {
+        node_name: nodeName,
+        token: token,
+        username: otherUser
+      };
+
+      // Define the operation as an async function
+      const operation = async () => {
+        try {
+          console.log("Fetching profile picture:", payload);
+          const response = await fetch("/get_profile_picture_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.status === 401) {
+            console.warn("Unauthorized. Refreshing token and re-queuing fetchProfilePicture.");
+            await refreshToken();
+            queueRequest(operation); // Re-queue the fetch profile picture operation after token refresh
+            return;
+          }
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+
+          const data = await response.json();
+          if (data.error) {
+            console.error("Error fetching profile picture:", data.error);
+          } else {
+            const profileImg = document.getElementById("profilePicture");
+            
+            // Make sure the profile picture is not null or empty
+            if (data.profile_picture && data.profile_picture !== "/profile_pictures/default_profile.png") {
+              profileImg.src = data.profile_picture;
+              console.log("Profile picture updated to:", data.profile_picture);
+            } else {
+              console.log("Profile picture is still default. Data received:", data.profile_picture);
+            }
+          }
+        } catch (err) {
+          console.error("fetchProfilePicture error:", err);
+          throw err; // Re-throw to handle in the queue
+        }
+      };
+
+      // Queue the fetch profile picture operation
+      queueRequest(operation);
     }
-    
+
+    /**
+     * Initializes the chat by fetching necessary data.
+     */
+    function initialFetchChat() {
+      queueRequest(async () => {
+        try {
+          await checkBlockStatus();
+          await refreshMessages();
+          await refreshUserStatus();
+          await fetchProfilePicture();  // Ensure all operations complete
+        } catch (err) {
+          console.error("initialFetchChat error:", err);
+        }
+      });
+    }
+    /* -------------------------------------------------------------------------- */
+
+    /* ------------------------- Periodic Auto-Refresh ------------------------- */
+    /**
+     * Sets up periodic auto-refresh of chat data.
+     */
+    function setupAutoRefresh() {
+      setInterval(() => {
+        // Always queue refresh operations, regardless of isProcessing
+        queueRequest(async () => {
+          try {
+            await checkBlockStatus();
+            await refreshMessages();
+            await refreshUserStatus();
+            await fetchProfilePicture(); // Ensure all operations complete
+          } catch (err) {
+            console.error("Auto-refresh error:", err);
+          }
+        });
+      }, 6000); // Refresh every 6 seconds
+    }
+    /* -------------------------------------------------------------------------- */
+
+    /* ----------------------------- Event Listeners ---------------------------- */
     document.addEventListener("DOMContentLoaded", () => {
       initialFetchChat();
-    
-      // Refresh every 5 seconds in sequence
-      setInterval(() => {
-        checkBlockStatus()
-          .then(() => refreshMessages())
-          .then(() => refreshUserStatus())
-          .catch(err => console.error("5-second chain error:", err));
-      }, 5000);
-    
+      setupAutoRefresh();
+
       const blockBtn = document.getElementById("blockBtn");
       blockBtn.addEventListener("click", toggleBlock);
     });
+    /* -------------------------------------------------------------------------- */
   </script>
 </body>
 </html>

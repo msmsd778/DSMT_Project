@@ -5,10 +5,10 @@
          stop_node/0, logout_user/2, delete_group_message/2, fetch_and_display_group_messages/1,
          remove_user_from_group/2, replace_session/2, refresh_token/0, get_group_messages/1,
          get_chat_partners/1, get_user_groups/1, get_user_status/2, handle_logout/1,
-         upload_profile_picture/0, get_profile_picture/1, handle_group_deletion/1,
+         upload_profile_picture/0, get_profile_picture/2, handle_group_deletion/1,
          get_current_user_token/0, get_group_members/1, reassign_group_owner_and_remove/2,
          get_unread_counts/1, change_user_password/3, change_user_picture/3, search_users/2,
-         toggle_block_user/2]).
+         toggle_block_user/2, check_block_status/2, edit_message/3]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -506,6 +506,41 @@ send_message(Receiver, Message) when is_binary(Receiver), is_binary(Message) ->
     end.
 
 
+edit_message(UserToken, MessageID, NewText) when is_list(UserToken), is_list(MessageID), is_list(NewText) ->
+    edit_message(list_to_binary(UserToken), list_to_binary(MessageID), list_to_binary(NewText));
+edit_message(UserToken, MessageID, NewText) when is_binary(UserToken), is_binary(MessageID), is_binary(NewText) ->
+    ensure_inets_started(),
+
+    %% Construct JSON request body
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"message_id">> => MessageID,
+        <<"new_text">> => NewText
+    }),
+
+    Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
+    URL = "http://localhost:5000/internal_edit_message",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            io:format("Raw HTTP response for edit message: ~s~n", [Body]),  %% Debugging
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined -> {ok, JsonMap};
+                    ErrorMsg -> {error, binary_to_list(ErrorMsg)}
+                end
+            catch
+                _:Err ->
+                    io:format("Failed to parse JSON response: ~s~n", [Body]),
+                    {error, "Invalid JSON from /internal_edit_message"}
+            end;
+        {error, Reason} ->
+            io:format("HTTP request failed: ~p~n", [Reason]),
+            {error, Reason}
+    end.
+
+
 %% Process individual one-to-one message for display (for erlang shells)
 process_one_to_one_message(Msg, _CurrentUser) ->
     Sender    = maps:get(<<"sender">>,   Msg, <<"">>),
@@ -549,6 +584,39 @@ get_messages(UserToken, OtherUser) when is_binary(UserToken), is_binary(OtherUse
                 _:Err ->
                     io:format("Failed to parse JSON response: ~s~n", [Body]),
                     {error, "Invalid JSON from /internal_get_messages"}
+            end;
+        {error, Reason} ->
+            io:format("HTTP request failed: ~p~n", [Reason]),
+            {error, Reason}
+    end.
+
+
+check_block_status(UserToken, OtherUser) when is_list(UserToken), is_list(OtherUser) ->
+    check_block_status(list_to_binary(UserToken), list_to_binary(OtherUser));
+check_block_status(UserToken, OtherUser) when is_binary(UserToken), is_binary(OtherUser) ->
+    ensure_inets_started(),
+
+    %% Construct JSON request body
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"other_user">> => OtherUser
+    }),
+
+    Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
+    URL = "http://localhost:5000/internal_check_block_status",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined -> {ok, JsonMap};
+                    ErrorMsg -> {error, binary_to_list(ErrorMsg)}
+                end
+            catch
+                _:Err ->
+                    io:format("Failed to parse JSON response: ~s~n", [Body]),
+                    {error, "Invalid JSON from /internal_check_block_status"}
             end;
         {error, Reason} ->
             io:format("HTTP request failed: ~p~n", [Reason]),
@@ -995,47 +1063,35 @@ send_group_message(GroupName, Message) when is_binary(GroupName), is_binary(Mess
     end.
 
 
-%% Delete a message
-%% delete_message(MessageID, DeleteForBoth) -> {ok, Body} | {error, Reason}
-delete_message(MessageID, DeleteForBoth) when is_binary(MessageID), is_boolean(DeleteForBoth) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    %% Construct JSON payload using jsx
-                    Payload = #{
-                        <<"token">> => Token,
-                        <<"message_id">> => MessageID,
-                        <<"delete_for_both">> => DeleteForBoth
-                    },
-                    JSON = jsx:encode(Payload),
-                    
-                    URL = "http://localhost:5000/delete_message",
-                    Headers = [{"Content-Type", "application/json"}],
-                    
-                    %% Make HTTP POST request
-                    case http_request(post, URL, Headers, JSON) of
-                        {ok, Body} ->
-                            %% Decode JSON response
-                            {ok, JsonMap} = jsx:decode(Body),
-                            case maps:get(<<"message">>, JsonMap, undefined) of
-                                undefined ->
-                                    io:format("Failed to delete message: ~s~n", [Body]),
-                                    {error, "Failed to delete message."};
-                                Message ->
-                                    io:format("Delete message response: ~s~n", [Message]),
-                                    {ok, Message}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to delete message: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot delete message: ~s~n", [Reason]),
-                    {error, Reason}
+delete_message(UserToken, MessageID) when is_list(UserToken), is_list(MessageID) ->
+    delete_message(list_to_binary(UserToken), list_to_binary(MessageID));
+delete_message(UserToken, MessageID) when is_binary(UserToken), is_binary(MessageID) ->
+    ensure_inets_started(),
+
+    %% Construct JSON request body
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"message_id">> => MessageID
+    }),
+
+    Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
+    URL = "http://localhost:5000/internal_delete_message",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined -> {ok, JsonMap};
+                    ErrorMsg -> {error, binary_to_list(ErrorMsg)}
+                end
+            catch
+                _:Err ->
+                    io:format("Failed to parse JSON response: ~s~n", [Body]),
+                    {error, "Invalid JSON from /internal_delete_message"}
             end;
         {error, Reason} ->
-            io:format("Cannot delete message: ~s~n", [Reason]),
+            io:format("HTTP request failed: ~p~n", [Reason]),
             {error, Reason}
     end.
 
@@ -1578,40 +1634,39 @@ set_profile_picture(Token, Base64Image) ->
             {error, Reason}
     end.
 
-get_profile_picture(User) when is_list(User) ->
-    get_profile_picture(list_to_binary(User));
-get_profile_picture(User) when is_binary(User) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    QParams = <<"token=", Token/binary, "&username=", User/binary>>,
-                    URL = <<"http://localhost:5000/get_profile_picture?", QParams/binary>>,
-                    Headers = [{"Accept", "application/json"}],
-                    case http_request(get, binary_to_list(URL), Headers, "") of
-                        {ok, Body} ->
-                            io:format("get_profile_picture response: ~s~n", [binary_to_list(Body)]),
-                            JsonMap = jsx:decode(Body, [return_maps]),
-                            case maps:get(<<"image_url">>, JsonMap, undefined) of
-                                undefined ->
-                                    io:format("Failed to retrieve profile picture: ~s~n", [binary_to_list(Body)]),
-                                    {error, "Failed to retrieve profile picture."};
-                                ImageURL ->
-                                    io:format("Profile picture URL retrieved for ~s: ~s~n", [binary_to_list(User), ImageURL]),
-                                    {ok, ImageURL}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to retrieve profile picture: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot retrieve profile picture: ~s~n", [Reason]),
-                    {error, Reason}
+get_profile_picture(UserToken, Username) when is_list(UserToken), is_list(Username) ->
+    get_profile_picture(list_to_binary(UserToken), list_to_binary(Username));
+get_profile_picture(UserToken, Username) when is_binary(UserToken), is_binary(Username) ->
+    ensure_inets_started(),
+
+    %% Construct JSON request body
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"username">> => Username
+    }),
+
+    Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
+    URL = "http://localhost:5000/internal_get_profile_picture",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"profile_picture">>, JsonMap, undefined) of
+                    undefined ->
+                        {error, "Invalid JSON from Flask"};
+                    ProfilePicture when is_binary(ProfilePicture) ->
+                        {ok, binary_to_list(ProfilePicture)}
+                end
+            catch
+                _:Err ->
+                    {error, "Invalid JSON from Flask"}
             end;
         {error, Reason} ->
-            io:format("Cannot retrieve profile picture: ~s~n", [Reason]),
             {error, Reason}
     end.
+
 
 
 toggle_block_user(UserToken, OtherUser) when is_list(UserToken), is_list(OtherUser) ->
@@ -1629,9 +1684,7 @@ toggle_block_user(UserToken, OtherUser) when is_binary(UserToken), is_binary(Oth
     URL = "http://localhost:5000/internal_toggle_block_user",
 
     case http_request(post, URL, Headers, RequestBody) of
-        {ok, Body} ->
-            io:format("Raw HTTP response: ~s~n", [Body]),  %% Debugging output
-            
+        {ok, Body} ->            
             try
                 JsonMap = jsx:decode(Body, [return_maps]),
                 case maps:get(<<"error">>, JsonMap, undefined) of
