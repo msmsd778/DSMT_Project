@@ -1,14 +1,14 @@
 -module(node_manager).
 -export([init/0, broadcast_message/1, propagate_registration/1, handle_incoming_message/2,
-         register_user/2, login_user/2, send_message/2, get_messages/2, create_group/3,
-         delete_group/1, add_user_to_group/2, send_group_message/2, delete_message/2,
-         stop_node/0, logout_user/2, delete_group_message/2, fetch_and_display_group_messages/1,
-         remove_user_from_group/2, replace_session/2, refresh_token/0, get_group_messages/1,
+         register_user/2, login_user/2, send_message/5, get_messages/2, create_group/3,
+         delete_group/2, add_user_to_group/3, send_group_message/5, delete_message/2,
+         stop_node/0, logout_user/2, delete_group_message/3, reassign_group_owner_and_remove/3,
+         remove_user_from_group/3, replace_session/2, refresh_token/0, get_group_messages/2,
          get_chat_partners/1, get_user_groups/1, get_user_status/2, handle_logout/1,
          upload_profile_picture/0, get_profile_picture/2, handle_group_deletion/1,
-         get_current_user_token/0, get_group_members/1, reassign_group_owner_and_remove/2,
+         get_current_user_token/0, get_group_members/2, reassign_group_owner_and_remove/2,
          get_unread_counts/1, change_user_password/3, change_user_picture/3, search_users/2,
-         toggle_block_user/2, check_block_status/2, edit_message/3]).
+         toggle_block_user/2, check_block_status/2, edit_message/3, edit_group_message/4]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -286,7 +286,7 @@ login_user(Username, Password) when is_list(Username), is_list(Password) ->
             {error, "A user is already logged in. Please logout first."};
         {error, _Reason} ->
             ensure_inets_started(),
-            URL = "http://localhost:5000/login",
+            URL = "http://localhost:5000/internal_login",
             Payload = #{
                 <<"username">> => BinaryUsername,
                 <<"password">> => BinaryPassword,
@@ -357,7 +357,7 @@ logout_user(Username, Token) when is_binary(Username), is_binary(Token) ->
     %% 3) Call Python /logout to remove DB session and set user offline
     Payload = iolist_to_binary(jsx:encode(#{<<"token">> => Token})),
     Headers = [{"Content-Type", "application/json"}],
-    case http_request(post, "http://localhost:5000/logout", Headers, Payload) of
+    case http_request(post, "http://localhost:5000/internal_logout", Headers, Payload) of
         {ok, Body} ->
             io:format("Python logout response: ~s~n", [binary_to_list(Body)]);
         {error, Reason} ->
@@ -460,48 +460,53 @@ get_user_status(UserToken, Username) when is_binary(UserToken), is_binary(Userna
     end.
 
 
-%% Send a one-to-one message
-send_message(Receiver, Message) when is_list(Receiver), is_list(Message) ->
-    send_message(list_to_binary(Receiver), list_to_binary(Message));
-send_message(Receiver, Message) when is_binary(Receiver), is_binary(Message) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    %% Construct JSON payload using jsx and convert to binary
-                    Payload = #{
-                        <<"token">> => Token,
-                        <<"receiver">> => Receiver,
-                        <<"message">> => Message
-                    },
-                    JSON = iolist_to_binary(jsx:encode(Payload)),
-                    
-                    URL = "http://localhost:5000/send_message",
-                    Headers = [{"Content-Type", "application/json"}],
-                    
-                    %% Make HTTP POST request
-                    case http_request(post, URL, Headers, JSON) of
-                        {ok, Body} ->
-                            %% Decode JSON response
-                            JsonMap = jsx:decode(Body),
-                            case maps:get(<<"message">>, JsonMap, undefined) of
-                                undefined ->
-                                    io:format("Failed to send message: ~s~n", [binary_to_list(Body)]),
-                                    {error, "Failed to send message."};
-                                SentMessage ->
-                                    io:format("Message sent successfully: ~s~n", [binary_to_list(SentMessage)]),
-                                    {ok, SentMessage}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to send message: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot send message: ~s~n", [Reason]),
-                    {error, Reason}
+%%% 1) Clause for list args => convert to binary
+send_message(UserToken, Receiver, MsgText, ReplyId, ReplyPreview)
+  when is_list(UserToken), is_list(Receiver), is_list(MsgText),
+       is_list(ReplyId), is_list(ReplyPreview) ->
+    send_message(
+      list_to_binary(UserToken),
+      list_to_binary(Receiver),
+      list_to_binary(MsgText),
+      list_to_binary(ReplyId),
+      list_to_binary(ReplyPreview)
+    );
+
+%%% 2) Clause for binary args => call /internal_send_message
+send_message(UserToken, Receiver, MsgText, ReplyId, ReplyPreview)
+  when is_binary(UserToken), is_binary(Receiver),
+       is_binary(MsgText), is_binary(ReplyId), is_binary(ReplyPreview) ->
+    ensure_inets_started(),
+
+    RequestBody = jsx:encode(#{
+      <<"token">> => UserToken,
+      <<"receiver">> => Receiver,
+      <<"message">> => MsgText,
+      <<"reply_to_msg_id">> => ReplyId,
+      <<"reply_preview">> => ReplyPreview
+    }),
+    Headers = [
+      {"Content-Type", "application/json"},
+      {"Accept", "application/json"}
+    ],
+    URL = "http://localhost:5000/internal_send_message",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        Msg = maps:get(<<"message">>, JsonMap, <<"Message sent.">>),
+                        {ok, Msg};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err ->
+                    {error, "Invalid JSON from /internal_send_message"}
             end;
         {error, Reason} ->
-            io:format("Cannot send message: ~s~n", [Reason]),
             {error, Reason}
     end.
 
@@ -656,50 +661,38 @@ get_chat_partners(UserToken) when is_binary(UserToken) ->
 
 
 %% Get messages from a group
-get_group_messages(GroupName) when is_list(GroupName) ->
-    get_group_messages(list_to_binary(GroupName));
-get_group_messages(GroupName) when is_binary(GroupName) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    %% Construct query parameters using binary concatenation
-                    QParams = << "token=", Token/binary, "&group_name=", GroupName/binary >>,
-                    URL = <<"http://localhost:5000/get_group_messages?", QParams/binary>>,
-                    Headers = [{"Accept", "application/json"}],
+get_group_messages(UserToken, GroupName) 
+    when is_list(UserToken), is_list(GroupName) ->
+    get_group_messages(
+      list_to_binary(UserToken),
+      list_to_binary(GroupName)
+    );
+get_group_messages(UserToken, GroupName)
+    when is_binary(UserToken), is_binary(GroupName) ->
+    ensure_inets_started(),
 
-                    %% Make HTTP GET request
-                    case http_request(get, binary_to_list(URL), Headers, "") of
-                        {ok, Body} ->
-                            %% Decode JSON response
-                            try
-                                JsonMap = jsx:decode(Body, [return_maps]),
-                                GroupMessages = maps:get(<<"group_messages">>, JsonMap, undefined),
-                                if
-                                    GroupMessages =/= undefined ->
-                                        %% Process group messages
-                                        ProcessedGroupMessages = lists:map(fun(Msg) ->
-                                            process_group_message(Msg, Username)
-                                        end, GroupMessages),
-                                        {ok, ProcessedGroupMessages};
-                                    true ->
-                                        {error, "Failed to retrieve group messages."}
-                                end
-                            catch
-                                _:Err ->
-                                    io:format("Failed to parse group messages: ~s~n", [binary_to_list(Body)]),
-                                    {error, "Invalid response from server."}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to retrieve group messages: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot retrieve group messages: ~s~n", [Reason]),
-                    {error, Reason}
+    %% We'll do a GET request: /internal_get_group_messages?token=...&group_name=...
+    QueryString = <<"token=", UserToken/binary, "&group_name=", GroupName/binary>>,
+    URL = <<"http://localhost:5000/internal_get_group_messages?", QueryString/binary>>,
+    Headers = [{"Accept", "application/json"}],
+
+    case http_request(get, binary_to_list(URL), Headers, "") of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        %% Expecting "group_messages": [...]
+                        Messages = maps:get(<<"group_messages">>, JsonMap, []),
+                        {ok, Messages};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err ->
+                    {error, "Invalid JSON from /internal_get_group_messages"}
             end;
         {error, Reason} ->
-            io:format("Cannot retrieve group messages: ~s~n", [Reason]),
             {error, Reason}
     end.
 
@@ -760,18 +753,6 @@ display_group_messages(GroupMessages) ->
     end, GroupMessages).
 
 
-%% Fetch and display group messages
-fetch_and_display_group_messages(GroupName) when is_binary(GroupName) ->
-    case get_group_messages(GroupName) of
-        {ok, GroupMessages} ->
-            display_group_messages(GroupMessages),
-            ok;
-        {error, Reason} ->
-            io:format("Error fetching group messages: ~s~n", [Reason]),
-            {error, Reason}
-    end.
-
-
 create_group(UserToken, GroupName, Members) when is_list(UserToken), is_list(GroupName), is_list(Members) ->
     create_group(list_to_binary(UserToken), list_to_binary(GroupName), [list_to_binary(M) || M <- Members]);
 
@@ -815,56 +796,42 @@ handle_json_response(Body) when is_binary(Body) ->
 
 
 %% Delete a group (Owner Only)
-delete_group(GroupName) when is_list(GroupName) ->
-    delete_group(list_to_binary(GroupName));
-delete_group(GroupName) when is_binary(GroupName) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    %% Construct JSON payload
-                    Payload = #{
-                        <<"token">> => Token,
-                        <<"group_name">> => GroupName
-                    },
-                    JSON = jsx:encode(Payload),
-                    
-                    URL = "http://localhost:5000/delete_group",
-                    Headers = [{"Content-Type", "application/json"}],
-                    
-                    %% Make HTTP DELETE request
-                    case http_request(delete, URL, Headers, JSON) of
-                        {ok, Body} ->
-                            %% Decode JSON response
-                            try
-                                JsonMap = jsx:decode(Body, [return_maps]),
-                                case maps:get(<<"message">>, JsonMap, undefined) of
-                                    undefined ->
-                                        io:format("Failed to delete group: ~s~n", [binary_to_list(Body)]),
-                                        {error, "Failed to delete group."};
-                                    Message ->
-                                        io:format("Delete group response: ~s~n", [Message]),
-                                        %% Propagate deletion to other nodes
-                                        propagate_group_deletion(GroupName),
-                                        {ok, Message}
-                                end
-                            catch
-                                _: _Reason ->
-                                    io:format("Failed to parse JSON response: ~s~n", [binary_to_list(Body)]),
-                                    {error, "Invalid response from server."}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to delete group: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot delete group: ~s~n", [Reason]),
-                    {error, Reason}
+delete_group(UserToken, GroupName)
+    when is_list(UserToken), is_list(GroupName) ->
+    delete_group(list_to_binary(UserToken), list_to_binary(GroupName));
+delete_group(UserToken, GroupName)
+    when is_binary(UserToken), is_binary(GroupName) ->
+    ensure_inets_started(),
+
+    %% Build JSON request body
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"group_name">> => GroupName
+    }),
+    Headers = [
+        {"Content-Type", "application/json"},
+        {"Accept", "application/json"}
+    ],
+    URL = "http://localhost:5000/internal_delete_group",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        Message = maps:get(<<"message">>, JsonMap, <<"Group deleted.">>),
+                        {ok, Message};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err -> {error, "Invalid JSON from /internal_delete_group"}
             end;
-        {error, Reason} ->
-            io:format("Cannot delete group: ~s~n", [Reason]),
-            {error, Reason}
+        {error, Reason} -> {error, Reason}
     end.
+
+
 
 %% Propagate group deletion to all connected nodes
 propagate_group_deletion(GroupName) when is_binary(GroupName) ->
@@ -887,6 +854,50 @@ handle_group_deletion(GroupName) when is_binary(GroupName) ->
     io:format("Group ~s has been deleted from the system.~n", [binary_to_list(GroupName)]),
     %% Optionally, delete any cached messages or perform additional cleanup
     ok.
+
+
+
+reassign_group_owner_and_remove(UserToken, GroupName, NewOwner) 
+    when is_list(UserToken), is_list(GroupName), is_list(NewOwner) ->
+    reassign_group_owner_and_remove(
+      list_to_binary(UserToken),
+      list_to_binary(GroupName),
+      list_to_binary(NewOwner)
+    );
+reassign_group_owner_and_remove(UserToken, GroupName, NewOwner)
+    when is_binary(UserToken), is_binary(GroupName), is_binary(NewOwner) ->
+    ensure_inets_started(),
+
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"group_name">> => GroupName,
+        <<"new_owner">> => NewOwner
+    }),
+    Headers = [
+        {"Content-Type", "application/json"},
+        {"Accept", "application/json"}
+    ],
+    URL = "http://localhost:5000/internal_reassign_group_owner_and_remove",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        Message = maps:get(<<"message">>, JsonMap, <<"Reassigned OK">>),
+                        {ok, Message};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err ->
+                    io:format("Failed to parse JSON in reassign_group_owner_and_remove: ~s~n", [Body]),
+                    {error, "Invalid JSON from /internal_reassign_group_owner_and_remove"}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 
 %% get_user_groups(Token) -> {ok, Groups} | {error, Reason}
@@ -922,145 +933,146 @@ get_user_groups(UserToken) when is_binary(UserToken) ->
     end.
 
 
-%% Add a user to a group
-%% add_user_to_group(GroupName, UsernameToAdd) -> {ok, Body} | {error, Reason}
-add_user_to_group(GroupName, UsernameToAdd) when is_binary(GroupName), is_binary(UsernameToAdd) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    %% Construct JSON payload using jsx
-                    Payload = #{
-                        <<"token">> => Token,
-                        <<"group_name">> => GroupName,
-                        <<"username">> => UsernameToAdd
-                    },
-                    JSON = jsx:encode(Payload),
-                    
-                    URL = "http://localhost:5000/add_user_to_group",
-                    Headers = [{"Content-Type", "application/json"}],
-                    
-                    %% Make HTTP POST request
-                    case http_request(post, URL, Headers, JSON) of
-                        {ok, Body} ->
-                            %% Decode JSON response
-                            {ok, JsonMap} = jsx:decode(Body),
-                            case maps:get(<<"message">>, JsonMap, undefined) of
-                                undefined ->
-                                    io:format("Failed to add user to group: ~s~n", [Body]),
-                                    {error, "Failed to add user to group."};
-                                Message ->
-                                    io:format("Add user to group response: ~s~n", [Message]),
-                                    {ok, Message}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to add user to group: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot add user to group: ~s~n", [Reason]),
-                    {error, Reason}
+%% Public wrapper that accepts either list() or binary() arguments.
+add_user_to_group(UserToken, GroupName, UsernameToAdd) when is_list(UserToken), is_list(GroupName), is_list(UsernameToAdd) ->
+    add_user_to_group(
+        list_to_binary(UserToken),
+        list_to_binary(GroupName),
+        list_to_binary(UsernameToAdd)
+    );
+add_user_to_group(UserToken, GroupName, UsernameToAdd) when is_binary(UserToken), is_binary(GroupName), is_binary(UsernameToAdd) ->
+    ensure_inets_started(),
+
+    %% Build JSON request body
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"group_name">> => GroupName,
+        <<"username">> => UsernameToAdd
+    }),
+
+    Headers = [
+        {"Content-Type", "application/json"},
+        {"Accept", "application/json"}
+    ],
+
+    URL = "http://localhost:5000/internal_add_user_to_group",  %% The new internal endpoint
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        %% No "error" => success
+                        Message = maps:get(<<"message">>, JsonMap, <<"Successfully added user">>),
+                        {ok, Message};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err ->
+                    io:format("Failed to parse JSON in add_user_to_group: ~s~n", [Body]),
+                    {error, "Invalid JSON from /internal_add_user_to_group"}
             end;
         {error, Reason} ->
-            io:format("Cannot add user to group: ~s~n", [Reason]),
+            io:format("HTTP request to add_user_to_group failed: ~p~n", [Reason]),
             {error, Reason}
     end.
 
-%% Remove a user from a group (Owner Only)
-remove_user_from_group(GroupName, UsernameToRemove) when is_binary(GroupName), is_binary(UsernameToRemove) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    %% Construct JSON payload using jsx
-                    Payload = #{
-                        <<"token">> => Token,
-                        <<"group_name">> => GroupName,
-                        <<"username">> => UsernameToRemove
-                    },
-                    JSON = jsx:encode(Payload),
 
-                    URL = "http://localhost:5000/remove_user_from_group",
-                    Headers = [{"Content-Type", "application/json"}],
+%% Same pattern for remove_user_from_group/3
+remove_user_from_group(UserToken, GroupName, UsernameToRemove) when is_list(UserToken), is_list(GroupName), is_list(UsernameToRemove) ->
+    remove_user_from_group(
+        list_to_binary(UserToken),
+        list_to_binary(GroupName),
+        list_to_binary(UsernameToRemove)
+    );
+remove_user_from_group(UserToken, GroupName, UsernameToRemove) when is_binary(UserToken), is_binary(GroupName), is_binary(UsernameToRemove) ->
+    ensure_inets_started(),
 
-                    %% Make HTTP POST request
-                    case http_request(post, URL, Headers, JSON) of
-                        {ok, Body} ->
-                            %% Decode JSON response
-                            try
-                                JsonMap = jsx:decode(Body, [return_maps]),
-                                Message = maps:get(<<"message">>, JsonMap, undefined),
-                                case Message of
-                                    undefined ->
-                                        io:format("Failed to remove user from group: ~s~n", [binary_to_list(Body)]),
-                                        {error, "Failed to remove user from group."};
-                                    _ ->
-                                        io:format("User removed from group successfully: ~s~n", [binary_to_list(Message)]),
-                                        {ok, Message}
-                                end
-                            catch
-                                _:Err ->
-                                    io:format("Error parsing remove user response: ~s~n", [binary_to_list(Body)]),
-                                    {error, "Parse error"}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to remove user from group: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot remove user from group: ~s~n", [Reason]),
-                    {error, Reason}
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"group_name">> => GroupName,
+        <<"username">> => UsernameToRemove
+    }),
+    Headers = [
+        {"Content-Type", "application/json"},
+        {"Accept", "application/json"}
+    ],
+    URL = "http://localhost:5000/internal_remove_user_from_group",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        %% success
+                        Message = maps:get(<<"message">>, JsonMap, <<"User removed successfully">>),
+                        {ok, Message};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err ->
+                    io:format("Failed to parse JSON in remove_user_from_group: ~s~n", [Body]),
+                    {error, "Invalid JSON from /internal_remove_user_from_group"}
             end;
         {error, Reason} ->
-            io:format("Cannot remove user from group: ~s~n", [Reason]),
+            io:format("HTTP request to remove_user_from_group failed: ~p~n", [Reason]),
             {error, Reason}
     end.
     
 
-%% Send a group message
-send_group_message(GroupName, Message) when is_list(GroupName), is_list(Message) ->
-    send_group_message(list_to_binary(GroupName), list_to_binary(Message));
-send_group_message(GroupName, Message) when is_binary(GroupName), is_binary(Message) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    %% Construct JSON payload using jsx and convert to binary
-                    Payload = #{
-                        <<"token">> => Token,
-                        <<"group_name">> => GroupName,
-                        <<"message">> => Message
-                    },
-                    JSON = iolist_to_binary(jsx:encode(Payload)),
-                    
-                    URL = "http://localhost:5000/send_group_message",
-                    Headers = [{"Content-Type", "application/json"}],
-                    
-                    %% Make HTTP POST request
-                    case http_request(post, URL, Headers, JSON) of
-                        {ok, Body} ->
-                            %% Decode JSON response
-                            JsonMap = jsx:decode(Body),
-                            case maps:get(<<"message">>, JsonMap, undefined) of
-                                undefined ->
-                                    io:format("Failed to send group message: ~s~n", [binary_to_list(Body)]),
-                                    {error, "Failed to send group message."};
-                                SentMessage ->
-                                    io:format("Group message sent successfully: ~s~n", [binary_to_list(SentMessage)]),
-                                    {ok, SentMessage}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to send group message: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot send group message: ~s~n", [Reason]),
-                    {error, Reason}
+%%% 1) Clause for list args => convert to binary
+send_group_message(UserToken, GroupName, MsgText, ReplyId, ReplyPreview)
+  when is_list(UserToken), is_list(GroupName), is_list(MsgText),
+       is_list(ReplyId), is_list(ReplyPreview) ->
+    % Convert them to binary and call the second clause
+    send_group_message(
+      list_to_binary(UserToken),
+      list_to_binary(GroupName),
+      list_to_binary(MsgText),
+      list_to_binary(ReplyId),
+      list_to_binary(ReplyPreview)
+    );  %% <--- NOTICE THE SEMICOLON HERE
+
+%%% 2) Clause for binary args => actually do the HTTP request
+send_group_message(UserToken, GroupName, MsgText, ReplyId, ReplyPreview)
+  when is_binary(UserToken), is_binary(GroupName),
+       is_binary(MsgText), is_binary(ReplyId), is_binary(ReplyPreview) ->
+    ensure_inets_started(),
+
+    RequestBody = jsx:encode(#{
+      <<"token">> => UserToken,
+      <<"group_name">> => GroupName,
+      <<"message">> => MsgText,
+      <<"reply_to_msg_id">> => ReplyId,
+      <<"reply_preview">> => ReplyPreview
+    }),
+    Headers = [
+      {"Content-Type", "application/json"},
+      {"Accept", "application/json"}
+    ],
+    URL = "http://localhost:5000/internal_send_group_message",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        Message = maps:get(<<"message">>, JsonMap, <<"Message sent.">>),
+                        {ok, Message};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err ->
+                    {error, "Invalid JSON from /internal_send_group_message"}
             end;
         {error, Reason} ->
-            io:format("Cannot send group message: ~s~n", [Reason]),
             {error, Reason}
-    end.
+    end.  %% <--- PERIOD HERE (last clause)
 
 
 delete_message(UserToken, MessageID) when is_list(UserToken), is_list(MessageID) ->
@@ -1096,48 +1108,96 @@ delete_message(UserToken, MessageID) when is_binary(UserToken), is_binary(Messag
     end.
 
 %% Delete a group message
-%% delete_group_message(GroupName, MessageID) -> {ok, Body} | {error, Reason}
-delete_group_message(GroupName, MessageID) when is_binary(GroupName), is_binary(MessageID) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    %% Construct JSON payload using jsx
-                    Payload = #{
-                        <<"token">> => Token,
-                        <<"group_name">> => GroupName,
-                        <<"message_id">> => MessageID
-                    },
-                    JSON = jsx:encode(Payload),
-                    
-                    URL = "http://localhost:5000/delete_group_message",
-                    Headers = [{"Content-Type", "application/json"}],
-                    
-                    %% Make HTTP POST request
-                    case http_request(post, URL, Headers, JSON) of
-                        {ok, Body} ->
-                            %% Decode JSON response
-                            {ok, JsonMap} = jsx:decode(Body),
-                            case maps:get(<<"message">>, JsonMap, undefined) of
-                                undefined ->
-                                    io:format("Failed to delete group message: ~s~n", [Body]),
-                                    {error, "Failed to delete group message."};
-                                Message ->
-                                    io:format("Delete group message response: ~s~n", [Message]),
-                                    {ok, Message}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to delete group message: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    io:format("Cannot delete group message: ~s~n", [Reason]),
-                    {error, Reason}
+delete_group_message(UserToken, GroupName, MsgId)
+    when is_list(UserToken), is_list(GroupName), is_list(MsgId) ->
+    delete_group_message(
+      list_to_binary(UserToken),
+      list_to_binary(GroupName),
+      list_to_binary(MsgId)
+    );
+
+%%% 2) If arguments are already binary, do the actual HTTP request:
+delete_group_message(UserToken, GroupName, MsgId)
+    when is_binary(UserToken), is_binary(GroupName), is_binary(MsgId) ->
+    ensure_inets_started(),
+
+    %% Build JSON body
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"group_name">> => GroupName,
+        <<"message_id">> => MsgId
+    }),
+    Headers = [
+        {"Content-Type", "application/json"},
+        {"Accept", "application/json"}
+    ],
+    URL = "http://localhost:5000/internal_delete_group_message",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        %% success
+                        Message = maps:get(<<"message">>, JsonMap, <<"Deleted OK">>),
+                        {ok, Message};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err ->
+                    io:format("Failed to parse JSON in delete_group_message: ~s~n", [Body]),
+                    {error, "Invalid JSON from /internal_delete_group_message"}
             end;
         {error, Reason} ->
-            io:format("Cannot delete group message: ~s~n", [Reason]),
+            io:format("HTTP request to /internal_delete_group_message failed: ~p~n", [Reason]),
             {error, Reason}
     end.
+
+
+edit_group_message(UserToken, GroupName, MsgId, NewText)
+    when is_list(UserToken), is_list(GroupName), is_list(MsgId), is_list(NewText) ->
+    edit_group_message(
+      list_to_binary(UserToken),
+      list_to_binary(GroupName),
+      list_to_binary(MsgId),
+      list_to_binary(NewText)
+    );
+edit_group_message(UserToken, GroupName, MsgId, NewText)
+    when is_binary(UserToken), is_binary(GroupName),
+         is_binary(MsgId), is_binary(NewText) ->
+    ensure_inets_started(),
+
+    RequestBody = jsx:encode(#{
+        <<"token">> => UserToken,
+        <<"group_name">> => GroupName,
+        <<"message_id">> => MsgId,
+        <<"new_text">> => NewText
+    }),
+    Headers = [
+        {"Content-Type", "application/json"},
+        {"Accept", "application/json"}
+    ],
+    URL = "http://localhost:5000/internal_edit_group_message",
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        Message = maps:get(<<"message">>, JsonMap, <<"Group message edited.">>),
+                        {ok, Message};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err -> {error, "Invalid JSON from /internal_edit_group_message"}
+            end;
+        {error, Reason} -> {error, Reason}
+    end. 
+
 
 
 get_unread_counts(UserToken) when is_list(UserToken) ->
@@ -1176,45 +1236,36 @@ get_unread_counts(UserToken) when is_binary(UserToken) ->
     end.
 
 
-get_group_members(GroupName) when is_list(GroupName) ->
-    get_group_members(list_to_binary(GroupName));
-get_group_members(GroupName) when is_binary(GroupName) ->
-    case get_current_user() of
-        {ok, Username} ->
-            case get_user_token(Username) of
-                {ok, Token} ->
-                    %% Construct query params
-                    QParams = << "token=", Token/binary, "&group_name=", GroupName/binary >>,
-                    URL = <<"http://localhost:5000/get_group_members?", QParams/binary>>,
-                    Headers = [{"Accept", "application/json"}],
+get_group_members(UserToken, GroupName) when is_list(UserToken), is_list(GroupName) ->
+    get_group_members(list_to_binary(UserToken), list_to_binary(GroupName));
 
-                    case http_request(get, binary_to_list(URL), Headers, "") of
-                        {ok, Body} ->
-                            %% Parse JSON
-                            try
-                                JsonMap = jsx:decode(Body, [return_maps]),
-                                Members = maps:get(<<"members">>, JsonMap, undefined),
-                                Owner = maps:get(<<"owner">>, JsonMap, undefined),
-                                case {Members, Owner} of
-                                    {undefined, _} ->
-                                        io:format("Failed to parse group membership: ~s~n", [binary_to_list(Body)]),
-                                        {error, "Failed to parse group membership."};
-                                    {MembersList, OwnerName} ->
-                                        {ok, #{members => MembersList, owner => OwnerName}}
-                                end
-                            catch
-                                _:Err ->
-                                    io:format("Error parsing membership JSON: ~s~n", [binary_to_list(Body)]),
-                                    {error, "Parse error"}
-                            end;
-                        {error, Reason} ->
-                            io:format("Failed to get group members: ~s~n", [Reason]),
-                            {error, Reason}
-                    end;
-                {error, Reason} ->
-                    {error, Reason}
+get_group_members(UserToken, GroupName) 
+  when is_binary(UserToken), is_binary(GroupName) ->
+    ensure_inets_started(),
+
+    %% We'll do a GET request: /internal_get_group_members?token=...&group_name=...
+    QueryString = <<"token=", UserToken/binary, "&group_name=", GroupName/binary>>,
+    URL = <<"http://localhost:5000/internal_get_group_members?", QueryString/binary>>,
+    Headers = [{"Accept", "application/json"}],
+
+    case http_request(get, binary_to_list(URL), Headers, "") of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        %% success: e.g. {"members": [...],"owner":"..."}
+                        {ok, JsonMap};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err ->
+                    io:format("Failed to parse JSON in get_group_members: ~s~n", [Body]),
+                    {error, "Invalid JSON from /internal_get_group_members"}
             end;
         {error, Reason} ->
+            io:format("HTTP request to /internal_get_group_members failed: ~p~n", [Reason]),
             {error, Reason}
     end.
 
@@ -1453,7 +1504,6 @@ stop_node() ->
         _ ->
             {error, {database_result, DatabaseResult, stop_result, StopResult}}
     end.
-
 
 
 %% Remove a node from the database

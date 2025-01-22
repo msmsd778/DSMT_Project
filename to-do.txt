@@ -1,3 +1,7 @@
-Add sending voice logic.
-
-Add sending file logic.
+erlangify group chat (done)
+add deleting and editing messages in group chat (done)
+delete group by owner any time (done)
+rename login and logout and register functions (done)
+erlangify refresh token
+rewrite setting profile picture while registering and align it with new design
+change the UI node name field to short name and launch erlang shell with the same name and init automatically (optional)

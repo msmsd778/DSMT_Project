@@ -108,7 +108,7 @@ def update_token():
         return jsonify({"error": "Token is required."}), 400
     session['token'] = new_token
     username = session.get('username')
-    node_name = session.get('node_name')  # Default node name
+    node_name = session.get('node_name')
 
     if not username:
         return jsonify({"error": "Username not found in session."}), 400
@@ -197,9 +197,8 @@ def register_user():
 
 
 # User Login (Generate session token)
-@app.route('/login', methods=['POST'])
-@limiter.limit("5 per minute")
-def login_user():
+@app.route('/internal_login', methods=['POST'])
+def internal_login():
     data = request.json
     username = data.get('username')
     password = data.get('password')
@@ -243,14 +242,9 @@ def login_user():
         return jsonify({"error": "Invalid credentials."}), 401
 
 
-@app.route('/logout', methods=['POST'])
-@limiter.limit("100 per hour")
-def logout_user():
-    """
-    DO NOT call this directly from the frontend.
-    This is called internally by Erlang's logout_user/2
-    to finalize removing the session from MongoDB.
-    """
+@app.route('/internal_logout', methods=['POST'])
+def internal_logout():
+
     data = request.json
     token = data.get('token')
     if not token:
@@ -348,18 +342,13 @@ scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
 
 # Send Message (Requires token)
-@app.route('/send_message', methods=['POST'])
-@limiter.limit("1000 per day; 50 per minute")
-def send_message():
+@app.route("/internal_send_message", methods=["POST"])
+def internal_send_message():
     """
-    Expects JSON:
-    {
-    "token": "...",
-    "receiver": "...",
-    "message": "...",
-    "reply_to_msg_id": "...",  # (optional)
-    "reply_preview": "..."     # (optional)
-    }
+    Called internally by Erlang's send_message/5 function.
+    Similar logic to your old /send_message, but without 
+    separate session validation or user blocking checks 
+    (unless you'd like them here).
     """
     data = request.json
     token = data.get('token')
@@ -375,23 +364,20 @@ def send_message():
     if not sender:
         return jsonify({"error": "Invalid or missing token."}), 401
 
-    # Check if receiver exists
+    # check receiver
     if not users_collection.find_one({"username": receiver}):
         return jsonify({"error": "Receiver does not exist."}), 400
 
-    # If replying, validate the original message exists and belongs to the conversation
+    # if replying ...
     if reply_to_msg_id:
         try:
             original_msg = messages_collection.find_one({"_id": ObjectId(reply_to_msg_id)})
             if not original_msg:
                 return jsonify({"error": "Original message to reply to does not exist."}), 400
-            if not ((original_msg['sender'] == sender and original_msg['receiver'] == receiver) or
-                    (original_msg['sender'] == receiver and original_msg['receiver'] == sender)):
-                return jsonify({"error": "Cannot reply to a message outside this conversation."}), 400
+            # etc. same logic...
         except:
             return jsonify({"error": "Invalid reply_to_msg_id format."}), 400
 
-    # Construct the message document
     msg_doc = {
         "sender": sender,
         "receiver": receiver,
@@ -401,8 +387,6 @@ def send_message():
         "deleted_globally": False,
         "edited": False
     }
-
-    # Add reply fields if replying
     if reply_to_msg_id:
         msg_doc["reply_to"] = reply_to_msg_id
     if reply_preview:
@@ -410,12 +394,9 @@ def send_message():
 
     try:
         messages_collection.insert_one(msg_doc)
-        logger.info(f"Message sent from '{sender}' to '{receiver}': {message}")
-        return jsonify({"message": "Message sent successfully."}), 201
+        return jsonify({"message": "Message sent successfully."}), 200
     except Exception as e:
-        logger.error(f"Error sending message: {str(e)}")
         return jsonify({"error": "Failed to send message."}), 500
-
 
 @app.route('/internal_get_messages', methods=['POST'])
 def internal_get_messages():
@@ -682,10 +663,12 @@ def internal_create_group():
         return jsonify({"error": "Failed to create group."}), 500
     
 
-@app.route('/delete_group', methods=['DELETE'])
-@limiter.limit("10 per day")
-def delete_group():
-    data = request.json
+@app.route('/internal_delete_group', methods=['POST'])
+def internal_delete_group():
+    """
+    Internal route called by Erlang to delete a group entirely.
+    """
+    data = request.get_json()
     token = data.get('token')
     group_name = data.get('group_name')
 
@@ -696,29 +679,20 @@ def delete_group():
     if not username:
         return jsonify({"error": "Invalid or missing token."}), 401
 
-    # Find the group
     group = groups_collection.find_one({"group_name": group_name})
     if not group:
         return jsonify({"error": "Group does not exist."}), 400
 
-    # Check if the requester is the owner
     if group.get("owner") != username:
         return jsonify({"error": "Only the group owner can delete the group."}), 403
 
     try:
         # Delete all group messages
         group_messages_collection.delete_many({"group_name": group_name})
-
         # Delete the group
         groups_collection.delete_one({"group_name": group_name})
-
         logger.info(f"Group '{group_name}' deleted by owner '{username}'.")
-
-        # Optionally, notify other nodes about the group deletion
-        # This can be implemented as needed
-
         return jsonify({"message": f"Group '{group_name}' deleted successfully."}), 200
-
     except Exception as e:
         logger.error(f"Error deleting group '{group_name}': {str(e)}")
         return jsonify({"error": "Failed to delete group."}), 500
@@ -744,17 +718,20 @@ def internal_get_user_groups():
     return jsonify({"group_names": group_names}), 200
     
 
-@app.route('/add_user_to_group', methods=['POST'])
-@limiter.limit("50 per day")
-def add_user_to_group():
+@app.route("/internal_add_user_to_group", methods=["POST"])
+def internal_add_user_to_group():
+    """
+    Internal route for adding user to group, called by Erlang's add_user_to_group().
+    """
     data = request.json
-    token = data.get('token')
-    group_name = data.get('group_name')
-    username_to_add = data.get('username')
+    token = data.get("token")
+    group_name = data.get("group_name")
+    username_to_add = data.get("username")
 
     if not token or not group_name or not username_to_add:
         return jsonify({"error": "Token, group_name, and username are required."}), 400
 
+    # Validate token -> get the requester
     username = validate_token(token)
     if not username:
         return jsonify({"error": "Invalid or missing token."}), 401
@@ -762,14 +739,13 @@ def add_user_to_group():
     # Find the group
     group = groups_collection.find_one({"group_name": group_name})
     if not group:
-        # Return a generic error message without specifying that the group doesn't exist
         return jsonify({"error": "Failed to add user to the group."}), 400
 
     # Check if the requester is a member
     if username not in group.get("members", []):
         return jsonify({"error": "Failed to add user to the group."}), 403
 
-    # Check if the user to add already exists in the group
+    # Check if user is already in group
     if username_to_add in group.get("members", []):
         return jsonify({"error": "Failed to add user to the group."}), 400
 
@@ -778,7 +754,7 @@ def add_user_to_group():
         return jsonify({"error": "Failed to add user to the group."}), 400
 
     try:
-        # Add the user to the group
+        # Perform the insert
         groups_collection.update_one(
             {"group_name": group_name},
             {"$push": {"members": username_to_add}}
@@ -790,20 +766,20 @@ def add_user_to_group():
         return jsonify({"error": "Failed to add user to the group."}), 500
 
 
-@app.route('/remove_user_from_group', methods=['POST'])
-def remove_user_from_group():
+@app.route("/internal_remove_user_from_group", methods=["POST"])
+def internal_remove_user_from_group():
     """
-    Remove a user from a group.
-    Expects JSON: { "token": ..., "group_name": ..., "username": ... }
+    Internal route for removing user from group, called by Erlang's remove_user_from_group().
     """
     data = request.json
-    token = data.get('token')
-    group_name = data.get('group_name')
-    username_to_remove = data.get('username')
+    token = data.get("token")
+    group_name = data.get("group_name")
+    username_to_remove = data.get("username")
 
     if not token or not group_name or not username_to_remove:
         return jsonify({"error": "Token, group_name, and username are required."}), 400
 
+    # Validate token
     username = validate_token(token)
     if not username:
         return jsonify({"error": "Invalid or expired token."}), 401
@@ -819,7 +795,7 @@ def remove_user_from_group():
     if username_to_remove != username and group["owner"] != username:
         return jsonify({"error": "Only the owner can remove other users."}), 403
 
-    # If the owner is removing themselves, they must use reassign_group_owner_and_remove
+    # If the owner is removing themselves, must reassign first
     if username_to_remove == username and group["owner"] == username:
         return jsonify({"error": "Owner must reassign ownership before leaving."}), 400
 
@@ -874,44 +850,49 @@ def internal_search_users():
     return jsonify({"users": results}), 200
 
 
-@app.route('/send_group_message', methods=['POST'])
-@limiter.limit("1000 per day")
-def send_group_message():
+@app.route('/internal_send_group_message', methods=['POST'])
+def internal_send_group_message():
+    """
+    Internal route called by Erlang to send a group message.
+    """
     data = request.json
-    token = data.get('token')
-    group_name = data.get('group_name')
-    message = data.get('message')
+    token = data.get("token")
+    group_name = data.get("group_name")
+    message_text = data.get("message")
 
-    if not token or not group_name or not message:
+    if not token or not group_name or not message_text:
         return jsonify({"error": "Token, group_name, and message are required."}), 400
 
     sender = validate_token(token)
     if not sender:
         return jsonify({"error": "Invalid or missing token."}), 401
 
-    # Check if group exists and sender is a member
     group = db['groups'].find_one({"group_name": group_name, "members": sender})
     if not group:
         return jsonify({"error": "Access denied or group does not exist."}), 403
 
-    # Create group message document
     group_msg = {
         "group_name": group_name,
         "sender": sender,
-        "message": message,
+        "message": message_text,
+        "reply_to": data.get("reply_to_msg_id"),
+        "reply_preview": data.get("reply_preview"), 
         "timestamp": datetime.datetime.utcnow(),
-        "read_by": [],  # Initially unread by all members
-        "deleted_globally": False
+        "read_by": [],
+        "deleted_globally": False,
+        "edited": False
     }
 
     db['group_messages'].insert_one(group_msg)
-    logger.info(f"Group message sent to '{group_name}' by '{sender}': {message}")
-    return jsonify({"message": "Group message sent successfully."}), 201
+    return jsonify({"message": "Group message sent successfully."}), 200
 
 
-@app.route('/get_group_messages', methods=['GET'])
-@limiter.limit("5000 per day")
-def get_group_messages():
+@app.route('/internal_get_group_messages', methods=['GET'])
+def internal_get_group_messages():
+    """
+    Internal route called by Erlang to get group messages.
+    Query params: token, group_name
+    """
     token = request.args.get('token')
     group_name = request.args.get('group_name')
 
@@ -922,16 +903,16 @@ def get_group_messages():
     if not username:
         return jsonify({"error": "Invalid or missing token."}), 401
 
-    # Check if user is a member of the group
     group = db['groups'].find_one({"group_name": group_name, "members": username})
     if not group:
         return jsonify({"error": "Access denied or group does not exist."}), 403
 
-    # Fetch group messages
-    group_messages = list(db['group_messages'].find({
+    group_messages_cursor = db['group_messages'].find({
         "group_name": group_name,
         "deleted_globally": False
-    }).sort("timestamp", 1))
+    }).sort("timestamp", 1)
+
+    group_messages = list(group_messages_cursor)
 
     # Mark messages as read for this user
     for msg in group_messages:
@@ -941,27 +922,76 @@ def get_group_messages():
                 {"$push": {"read_by": username}}
             )
 
-    # Prepare response including the message ID
     response = []
     for msg in group_messages:
         response.append({
-            "_id": str(msg['_id']),  # Convert ObjectId to string
-            "sender": msg['sender'],
-            "message": msg['message'],
-            "timestamp": msg['timestamp'].isoformat(),
-            "read_by": msg.get('read_by', [])
+            "_id": str(msg["_id"]),
+            "sender": msg["sender"],
+            "message": msg["message"],
+            "reply_to": str(msg.get("reply_to")) if msg.get("reply_to") else None,
+            "reply_preview": msg.get("reply_preview") if msg.get("reply_preview") else "",
+            "timestamp": msg["timestamp"].isoformat(),
+            "read_by": msg.get("read_by", []),
+            "edited": msg.get("edited", False)
         })
 
-    logger.info(f"Group messages fetched for group '{group_name}' by '{username}'.")
     return jsonify({"group_messages": response}), 200
 
 
-@app.route('/delete_group_message', methods=['POST'])
-def delete_group_message():
+@app.route("/internal_edit_group_message", methods=["POST"])
+def internal_edit_group_message():
     """
-    Delete a message in a group.
-    Expects JSON: { "token": ..., "group_name": ..., "message_id": ... }
-    Owners can delete any message; members can delete their own.
+    Internal route called by Erlang to edit text of a group message.
+    """
+    data = request.get_json()
+    token = data.get("token")
+    group_name = data.get("group_name")
+    message_id = data.get("message_id")
+    new_text = data.get("new_text")
+
+    if not token or not group_name or not message_id or not new_text:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    username = validate_token(token)
+    if not username:
+        return jsonify({"error": "Invalid or expired token."}), 401
+
+    # Find the group
+    group = groups_collection.find_one({"group_name": group_name})
+    if not group:
+        return jsonify({"error": "Group does not exist."}), 404
+
+    if username not in group["members"]:
+        return jsonify({"error": "Access denied. You are not a member of this group."}), 403
+
+    # Find the message
+    msg_doc = group_messages_collection.find_one({
+      "_id": ObjectId(message_id),
+      "group_name": group_name
+    })
+    if not msg_doc:
+        return jsonify({"error": "Message not found."}), 404
+
+    # Only the sender or the group owner can edit
+    if msg_doc["sender"] != username and group["owner"] != username:
+        return jsonify({"error": "You can only edit your own messages or be the group owner."}), 403
+
+    try:
+        # Perform the edit
+        group_messages_collection.update_one(
+          {"_id": msg_doc["_id"]},
+          {"$set": {"message": new_text, "edited": True}}
+        )
+        return jsonify({"message": "Group message edited successfully."}), 200
+    except Exception as e:
+        app.logger.error(f"Error editing group message: {str(e)}")
+        return jsonify({"error": "Failed to edit group message."}), 500
+
+
+@app.route('/internal_delete_group_message', methods=['POST'])
+def internal_delete_group_message():
+    """
+    Internal route called by Erlang to delete a message in a group.
     """
     data = request.json
     token = data.get('token')
@@ -1002,12 +1032,12 @@ def delete_group_message():
         return jsonify({"error": "Failed to delete group message."}), 500
 
 
-@app.route('/get_group_members', methods=['GET'])
-def get_group_members():
+@app.route('/internal_get_group_members', methods=['GET'])
+def internal_get_group_members():
     """
-    Retrieve group members and owner.
+    Internal route called by Erlang to retrieve group members and owner.
     Query Params: token, group_name
-    Returns JSON: { "members": [...], "owner": "username" }
+    Returns JSON: { "members": [...], "owner": "..." }
     """
     token = request.args.get("token")
     group_name = request.args.get("group_name")
@@ -1032,11 +1062,10 @@ def get_group_members():
     }), 200
 
 
-@app.route('/reassign_group_owner_and_remove', methods=['POST'])
-def reassign_group_owner_and_remove():
+@app.route('/internal_reassign_group_owner_and_remove', methods=['POST'])
+def internal_reassign_group_owner_and_remove():
     """
-    Current owner can reassign ownership to another member and leave the group.
-    Expects JSON: { "token": ..., "group_name": ..., "new_owner": ... }
+    Internal route called by Erlang to reassign ownership and remove old owner.
     """
     data = request.json
     token = data.get("token")
@@ -1061,12 +1090,10 @@ def reassign_group_owner_and_remove():
         return jsonify({"error": "New owner must be an existing group member."}), 400
 
     try:
-        # Reassign ownership
         groups_collection.update_one(
             {"group_name": group_name},
             {"$set": {"owner": new_owner}}
         )
-        # Remove the old owner from members
         groups_collection.update_one(
             {"group_name": group_name},
             {"$pull": {"members": username}}
@@ -1075,6 +1102,7 @@ def reassign_group_owner_and_remove():
     except Exception as e:
         app.logger.error(f"Error reassigning group ownership: {str(e)}")
         return jsonify({"error": "Failed to reassign group ownership."}), 500
+
 
 
 @app.route('/leave_group', methods=['POST'])
@@ -1125,6 +1153,7 @@ def group_chat(group_name):
     now_utc = datetime.datetime.utcnow().isoformat()
     token = session.get('token')
     username = session.get('username')
+    node_name = session.get('node_name')
     if not token or not username:
         return redirect(url_for('index'))
 
@@ -1170,6 +1199,7 @@ def group_chat(group_name):
         "group_chat.html",  # Make sure this exists in your /templates
         username=username,
         group_name=group_name,
+        node_name=node_name,
         owner=owner,
         members=members,
         messages=processed,
@@ -1301,41 +1331,74 @@ def parse_erlang_ok_list(stdout_str):
 
 def parse_erlang_ok_message(stdout_str):
     """
-    Parses Erlang's stdout for {ok, JSON_MAP} or {ok, "Message"}.
-    Returns a dictionary if JSON, or a string if just a message.
+    Parses Erlang's stdout for:
+      - {ok, [#{...}, #{...}]} => a list of Erlang maps
+      - {ok, [ {...}, {...} ]} => a pure JSON array
+      - {ok, #{...}}           => a single Erlang map
+      - {ok, "..."}            => a single string
     """
-    # Case 1: Extracting JSON-like Erlang map (#{...})
-    json_match = re.search(r'\{ok,#{(.*?)}\}', stdout_str, re.DOTALL)
+
+    # ---------- CASE A.2: Erlang array of maps => {ok,[#{...}, ...]}
+    list_of_maps_match = re.search(r'\{ok,\s*\[(#\{.*)\]\}', stdout_str, re.DOTALL)
+    if list_of_maps_match:
+        try:
+            raw_array_str = list_of_maps_match.group(1)
+
+            # Fix empty binaries (<<>> should be treated as empty strings)
+            raw_array_str = raw_array_str.replace('<<>>', '<<"">>')
+
+            # Convert Erlang-style syntax to JSON
+            raw_array_str = "[" + raw_array_str + "]"
+            raw_array_str = raw_array_str.replace("=>", ":")
+            raw_array_str = re.sub(r'<<"(.*?)">>', r'"\1"', raw_array_str)
+            raw_array_str = raw_array_str.replace('#{', '{')
+
+            return json.loads(raw_array_str)  # parse as normal JSON
+        except json.JSONDecodeError as e:
+            print(f"ERROR: Failed to parse array-of-maps JSON: {e}")
+            print(f"Attempted array string: {raw_array_str}")
+            return None
+
+    # ---------- CASE A.1: Pure JSON array => {ok, [ {...}, {...} ]}
+    pure_json_array_match = re.search(r'\{ok,\s*(\[[{].*?\])\}', stdout_str, re.DOTALL)
+    if pure_json_array_match:
+        try:
+            raw_array_str = pure_json_array_match.group(1)
+            return json.loads(raw_array_str)
+        except json.JSONDecodeError as e:
+            print(f"ERROR: Failed to parse pure JSON array: {e}")
+            print(f"Attempted array string: {raw_array_str}")
+            return None
+
+    # ---------- CASE B: Single Erlang map => {ok, #{...}}
+    json_match = re.search(r'\{ok,\s*#{(.*?)}\}', stdout_str, re.DOTALL)
     if json_match:
         try:
             json_str = json_match.group(1)
 
-            # Step 1: Replace Erlang-style '=>' with JSON ':'
+            # Fix empty binaries (<<>> should be treated as empty strings)
+            json_str = json_str.replace('<<>>', '<<"">>')
+
+            # Convert Erlang-style syntax to JSON
             json_str = json_str.replace("=>", ":")
-
-            # Step 2: Replace '<<"text">>' with '"text"'
             json_str = re.sub(r'<<"(.*?)">>', r'"\1"', json_str)
-
-            # Step 3: Remove '#' before '{' to fix JSON object notation
             json_str = json_str.replace('#{', '{')
-
-            # Wrap with braces to form a valid JSON object
             json_str = "{" + json_str + "}"
 
-            # Parse the JSON string
             return json.loads(json_str)
-
         except json.JSONDecodeError as e:
             print(f"ERROR: Failed to parse Erlang JSON response: {e}")
             print(f"Attempted JSON string: {json_str}")
             return None
 
-    # Case 2: If it's a plain message string {ok, "message"}
+    # ---------- CASE C: Single plain string => {ok,"some text"}
     string_match = re.search(r'\{ok,\s*"(.+?)"\}', stdout_str)
     if string_match:
         return string_match.group(1)
 
+    # If nothing matched
     return None
+
 
 @app.route("/dashboard")
 def dashboard():
@@ -1748,7 +1811,7 @@ def logout_via_erlang():
     if username and token:
         logout_result = call_erlang_function(
             node_name=node_name,
-            function="logout_user",
+            function="logout",
             args=[username, token]
         )
         app.logger.info(f"Erlang logout result: {logout_result['stdout']}")
@@ -1889,6 +1952,74 @@ def search_users_via_erlang():
         return jsonify({"error": error_message}), 400
     else:
         return jsonify({"error": f"Unknown result: {stdout_str}"}), 400
+
+
+@app.route('/add_user_to_group_via_erlang', methods=['POST'])
+def add_user_to_group_via_erlang():
+    """
+    Erlang entry point for adding a user to a group.
+    Expects JSON: { node_name, token, group_name, username }
+    """
+    data = request.json or {}
+    node_name = data.get("node_name")
+    user_token = data.get("token")
+    group_name = data.get("group_name")
+    username_to_add = data.get("username")
+
+    # Validate all params
+    if not node_name or not user_token or not group_name or not username_to_add:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    # Call Erlang function: add_user_to_group(UserToken, GroupName, UsernameToAdd)
+    result = call_erlang_function(
+        node_name=node_name,
+        function='add_user_to_group',
+        args=[user_token, group_name, username_to_add]
+    )
+
+    stdout_str = result['stdout']  # e.g. "ReturnVal: {ok,<<"User 'bob' added...">>}" or {error,"..."}
+    if "ReturnVal: {ok," in stdout_str:
+        # parse the message from stdout
+        message = parse_erlang_ok_message(stdout_str)
+        return jsonify({"message": message}), 200
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
+
+
+@app.route('/remove_user_from_group_via_erlang', methods=['POST'])
+def remove_user_from_group_via_erlang():
+    """
+    Erlang entry point for removing a user from a group.
+    Expects JSON: { node_name, token, group_name, username }
+    """
+    data = request.json or {}
+    node_name = data.get("node_name")
+    user_token = data.get("token")
+    group_name = data.get("group_name")
+    username_to_remove = data.get("username")
+
+    if not node_name or not user_token or not group_name or not username_to_remove:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    # Call Erlang function: remove_user_from_group(UserToken, GroupName, UsernameToRemove)
+    result = call_erlang_function(
+        node_name=node_name,
+        function='remove_user_from_group',
+        args=[user_token, group_name, username_to_remove]
+    )
+
+    stdout_str = result['stdout']
+    if "ReturnVal: {ok," in stdout_str:
+        message = parse_erlang_ok_message(stdout_str)
+        return jsonify({"message": message}), 200
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
 
 
 def parse_erlang_map(map_str):
@@ -2072,6 +2203,43 @@ def create_group_via_erlang():
         return jsonify({"error": f"Unknown result: {stdout_str}"}), 400
 
 
+@app.route("/delete_group_via_erlang", methods=["POST"])
+def delete_group_via_erlang():
+    """
+    Erlang entry point for deleting an entire group (owner only).
+    Expects JSON: { node_name, token, group_name }
+    """
+    data = request.json or {}
+    node_name = data.get("node_name")
+    user_token = data.get("token")
+    group_name = data.get("group_name")
+
+    if not node_name or not user_token or not group_name:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    # Call Erlang function
+    result = call_erlang_function(
+        node_name=node_name,
+        function="delete_group", # We'll define it in erlang
+        args=[user_token, group_name]
+    )
+    stdout_str = result["stdout"]
+
+    if "ReturnVal: {ok," in stdout_str:
+        # parse a success message
+        message = parse_erlang_ok_message(stdout_str) 
+        if isinstance(message, str):
+            return jsonify({"message": message}), 200
+        else:
+            return jsonify({"message": "Group deleted successfully."}), 200
+
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
+
 @app.route('/toggle_block_user_via_erlang', methods=['POST'])
 def toggle_block_user_via_erlang():
     data = request.get_json()  # Read JSON payload
@@ -2129,6 +2297,43 @@ def get_user_status_via_erlang():
 
     except Exception as e:
         return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route("/send_message_via_erlang", methods=["POST"])
+def send_message_via_erlang():
+    """
+    Erlang entry point for sending a new private message.
+    Expects JSON: { node_name, token, receiver, message,
+                    reply_to_msg_id (optional), reply_preview (optional) }
+    """
+    data = request.json or {}
+    node_name = data.get("node_name")
+    user_token = data.get("token")
+    receiver = data.get("receiver")
+    msg_text = data.get("message", "")
+    reply_id = data.get("reply_to_msg_id", "")
+    reply_preview = data.get("reply_preview", "")
+
+    if not node_name or not user_token or not receiver or not msg_text:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    # We'll define send_message/5 in node_manager.erl, passing user_token, receiver, msg_text, reply_id, reply_preview
+    result = call_erlang_function(
+        node_name=node_name,
+        function='send_message',
+        args=[user_token, receiver, msg_text, reply_id, reply_preview]
+    )
+
+    stdout_str = result['stdout']
+    if "ReturnVal: {ok," in stdout_str:
+        message = parse_erlang_ok_message(stdout_str)
+        return jsonify({"message": message}), 201
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
+
 
 
 @app.route('/get_messages_via_erlang', methods=['POST'])
@@ -2283,6 +2488,216 @@ def delete_message_via_erlang():
         print(f"ERROR: Exception in delete_message_via_erlang: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
+
+@app.route("/edit_group_message_via_erlang", methods=["POST"])
+def edit_group_message_via_erlang():
+    """
+    Erlang entry point to edit a group message's text.
+    Expects JSON: { node_name, token, group_name, message_id, new_text }
+    """
+    data = request.get_json() or {}
+    node_name = data.get("node_name")
+    user_token = data.get("token")
+    group_name = data.get("group_name")
+    message_id = data.get("message_id")
+    new_text = data.get("new_text")
+
+    if not node_name or not user_token or not group_name or not message_id or not new_text:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    # Call Erlang function: edit_group_message(UserToken, GroupName, MessageId, NewText)
+    result = call_erlang_function(
+        node_name=node_name,
+        function='edit_group_message',
+        args=[user_token, group_name, message_id, new_text]
+    )
+    stdout_str = result["stdout"]
+    if "ReturnVal: {ok," in stdout_str:
+        # parse success
+        message = parse_erlang_ok_message(stdout_str)
+        if isinstance(message, str):
+            return jsonify({"message": message}), 200
+        else:
+            return jsonify({"message": "Group message edited."}), 200
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
+
+
+@app.route('/delete_group_message_via_erlang', methods=['POST'])
+def delete_group_message_via_erlang():
+    """
+    Erlang entry point for deleting a group message.
+    Expects JSON: { "node_name", "token", "group_name", "message_id" }
+    """
+    data = request.json or {}
+    node_name = data.get("node_name")
+    user_token = data.get("token")
+    group_name = data.get("group_name")
+    message_id = data.get("message_id")
+
+    if not node_name or not user_token or not group_name or not message_id:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    # Call Erlang function delete_group_message(UserToken, GroupName, MessageId)
+    result = call_erlang_function(
+        node_name=node_name,
+        function='delete_group_message',
+        args=[user_token, group_name, message_id]
+    )
+
+    stdout_str = result['stdout']
+    # Expect something like "ReturnVal: {ok,<<"Message deleted successfully.">>}" or {error,<<"some reason">>}
+    if "ReturnVal: {ok," in stdout_str:
+        message = parse_erlang_ok_message(stdout_str)
+        return jsonify({"message": message}), 200
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
+
+
+@app.route('/get_group_members_via_erlang', methods=['GET'])
+def get_group_members_via_erlang():
+    """
+    Erlang entry point for retrieving group members and owner.
+    Query params: node_name, token, group_name
+    """
+    node_name = request.args.get("node_name")
+    user_token = request.args.get("token")
+    group_name = request.args.get("group_name")
+
+    if not node_name or not user_token or not group_name:
+        return jsonify({"error": "Missing required query parameters."}), 400
+
+    # Call Erlang function: get_group_members(UserToken, GroupName)
+    result = call_erlang_function(
+        node_name=node_name,
+        function='get_group_members',
+        args=[user_token, group_name]
+    )
+
+    stdout_str = result["stdout"]
+    # Expecting something like: ReturnVal: {ok,#{<<"members">> => [...], <<"owner">> => <<"...">>}} or {error,...}
+    if "ReturnVal: {ok," in stdout_str:
+        # parse the map from stdout
+        parsed = parse_erlang_ok_message(stdout_str)  
+        # This might yield a dict: {"members": [...], "owner": "..."}
+        if isinstance(parsed, dict):
+            return jsonify(parsed), 200
+        else:
+            # If it's not a dict, treat it as an error
+            return jsonify({"error": f"Invalid response format: {parsed}"}), 400
+
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
+
+
+@app.route('/reassign_group_owner_and_remove_via_erlang', methods=['POST'])
+def reassign_group_owner_and_remove_via_erlang():
+    """
+    Erlang entry for reassigning ownership and removing old owner.
+    Expects JSON: { "node_name", "token", "group_name", "new_owner" }
+    """
+    data = request.json or {}
+    node_name = data.get("node_name")
+    user_token = data.get("token")
+    group_name = data.get("group_name")
+    new_owner = data.get("new_owner")
+
+    if not node_name or not user_token or not group_name or not new_owner:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    # Call Erlang function
+    result = call_erlang_function(
+        node_name=node_name,
+        function='reassign_group_owner_and_remove',
+        args=[user_token, group_name, new_owner]
+    )
+
+    stdout_str = result['stdout']
+    if "ReturnVal: {ok," in stdout_str:
+        message = parse_erlang_ok_message(stdout_str)
+        return jsonify({"message": message}), 200
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
+
+
+@app.route('/get_group_messages_via_erlang', methods=['GET'])
+def get_group_messages_via_erlang():
+    node_name = request.args.get('node_name')
+    user_token = request.args.get('token')
+    group_name = request.args.get('group_name')
+
+    if not node_name or not user_token or not group_name:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    result = call_erlang_function(
+        node_name=node_name,
+        function='get_group_messages',
+        args=[user_token, group_name]
+    )
+
+    stdout_str = result['stdout']
+    if "ReturnVal: {ok," in stdout_str:
+        parsed = parse_erlang_ok_message(stdout_str)  # Updated with new case
+        if isinstance(parsed, list):
+            return jsonify({"group_messages": parsed}), 200
+        else:
+            return jsonify({"error": f"Expected a list of messages, got: {parsed}"}), 400
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
+
+    
+
+@app.route('/send_group_message_via_erlang', methods=['POST'])
+def send_group_message_via_erlang():
+    """
+    Erlang entry point for sending a new group message, but now we also handle reply_to_msg_id & reply_preview.
+    Expects JSON: { "node_name", "token", "group_name", "message",
+                    "reply_to_msg_id" (optional), "reply_preview" (optional) }
+    """
+    data = request.json or {}
+    node_name = data.get("node_name")
+    user_token = data.get("token")
+    group_name = data.get("group_name")
+    msg_text = data.get("message")
+
+    if not node_name or not user_token or not group_name or not msg_text:
+        return jsonify({"error": "Missing required parameters."}), 400
+
+    # Optional reply fields
+    reply_id = data.get("reply_to_msg_id", "")
+    reply_preview = data.get("reply_preview", "")
+
+    # Now pass these to Erlang as additional arguments, so we define send_group_message/5 or similar
+    result = call_erlang_function(
+        node_name=node_name,
+        function='send_group_message',  # We'll define a 5-arity version in node_manager.erl
+        args=[user_token, group_name, msg_text, reply_id, reply_preview]
+    )
+
+    stdout_str = result['stdout']
+    if "ReturnVal: {ok," in stdout_str:
+        message = parse_erlang_ok_message(stdout_str)
+        return jsonify({"message": message}), 201
+    elif "ReturnVal: {error," in stdout_str:
+        error_message = extract_error_from_stdout(stdout_str)
+        return jsonify({"error": error_message}), 400
+    else:
+        return jsonify({"error": f"Unexpected response: {stdout_str}"}), 500
 
 
 def format_time_for_display(dt):

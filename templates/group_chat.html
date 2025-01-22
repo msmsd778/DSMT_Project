@@ -1,776 +1,846 @@
-<!-- templates/group_chat.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Group Chat: {{ group_name }}</title>
   <style>
     body {
       font-family: Arial, sans-serif;
-      background-color: #f2f2f2;
+      background-color: #f4f4f4;
       margin: 0;
       padding: 0;
     }
+    /* Top bar with a back arrow */
+    .top-bar {
+      height: 50px; background: #fafafa; border-bottom: 1px solid #ddd;
+      position: relative;
+    }
+    .back-btn {
+      position: absolute; left: 1rem; top: 50%; transform: translateY(-50%);
+      background: none; border: none; font-size: 1.6rem; cursor: pointer; color: #555;
+      z-index: 10;
+    }
+    .back-btn:hover { color: #000; }
+
     .chat-container {
-      border: 1px solid #ccc;
-      width: 60%;
-      max-width: 800px;
-      margin: 2rem auto;
-      padding: 1rem;
+      width: 60%; max-width: 900px;
+      margin: 1rem auto;
       background-color: #fff;
       border-radius: 8px;
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    }
-    .chat-header {
-      display: flex;
-      align-items: center;
-      margin-bottom: 1rem;
-      border-bottom: 1px solid #ddd;
-      padding-bottom: 0.5rem;
-      justify-content: space-between;
-    }
-    .chat-title {
-      display: flex;
-      flex-direction: column;
-    }
-    .chat-title h2 {
-      margin: 0;
-      font-size: 1.5rem;
-    }
-    .chat-members {
-      font-size: 0.9rem;
-      color: #555;
-      margin-top: 0.3rem;
-    }
-    #membersCount {
-      font-size: 0.9rem;
-      color: #777;
-    }
-    .actions-area {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-    /* Owner Search / Add/Remove */
-    .owner-controls {
-      display: none; /* Shown if isOwner = true */
-      flex-direction: column;
-      align-items: flex-start;
-      margin-bottom: 1rem;
-    }
-    .owner-controls label {
-      font-weight: bold;
-      margin-bottom: 0.3rem;
-    }
-    #searchUserInput {
-      padding: 0.3rem;
-      width: 200px;
-    }
-    #suggestions {
-      position: relative;
-      background-color: #f9f9f9;
-      border: 1px solid #ccc;
-      max-height: 120px;
-      overflow-y: auto;
-      display: none; /* Hidden until we have suggestions */
-    }
-    .suggestion-item {
-      padding: 0.3rem;
-      cursor: pointer;
-    }
-    .suggestion-item:hover {
-      background-color: #eee;
+      display: flex; flex-direction: column;
+      height: 80vh; overflow: hidden; position: relative;
     }
 
+    .chat-header {
+      display: flex; align-items: center;
+      padding: 1rem; border-bottom: 1px solid #ddd;
+      background-color: #fafafa; position: relative; justify-content: space-between;
+    }
+    .chat-title { display: flex; flex-direction: column; }
+    .chat-title h2 { margin: 0; font-size: 1.5rem; }
+    .chat-members { font-size: 0.9rem; color: #555; margin-top: 0.3rem; }
+    #membersCount { font-size: 0.9rem; color: #777; }
+
+    .actions-area { display: flex; align-items: center; gap: 1rem; }
     .leave-group-btn {
-      background-color: #f44336;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      padding: 0.5rem 0.8rem;
-      cursor: pointer;
+      background-color: #f44336; color: white; border: none; border-radius: 4px;
+      padding: 0.5rem 0.8rem; cursor: pointer;
     }
-    .leave-group-btn:hover {
-      background-color: #d32f2f;
+    .leave-group-btn:hover { background-color: #d32f2f; }
+    .delete-group-btn {
+      background-color: #af3232; color: white; border: none; border-radius: 4px;
+      padding: 0.5rem 0.8rem; cursor: pointer;
     }
+    .delete-group-btn:hover { background-color: #9b1e1e; }
+
     #ownerSelectContainer {
-      display: none; /* Hidden until the current owner tries to leave */
-      align-items: center;
-      gap: 0.5rem;
+      display: none; /* hidden until reassign */
+      align-items: center; gap: 0.5rem;
+    }
+    .owner-controls {
+      display: none; /* shown if isOwner */
+      flex-direction: column; align-items: flex-start;
+      margin-bottom: 1rem; padding: 0 1rem;
+    }
+    .owner-controls label {
+      font-weight: bold; margin-bottom: 0.3rem;
+    }
+    #searchUserInput { padding: 0.3rem; width: 200px; }
+    #suggestions {
+      position: relative; background-color: #f9f9f9; border: 1px solid #ccc;
+      max-height: 120px; overflow-y: auto; display: none;
+    }
+    .suggestion-item {
+      padding: 0.3rem; cursor: pointer;
+    }
+    .suggestion-item:hover { background-color: #eee; }
+
+    /* Main chat area */
+    .messages-wrapper {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
     }
     #messages-area {
-      height: 400px;
-      overflow-y: scroll;
-      padding: 1rem;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      background-color: #fafafa;
-      margin-bottom: 1rem;
-    }
-    .message {
-      padding: 0.8rem 1.2rem;
-      margin-bottom: 0.8rem;
-      border-radius: 20px;
-      max-width: 80%;
-      clear: both;
+      flex: 1; overflow-y: auto; padding: 1rem;
+      display: flex; flex-direction: column;
+      gap: 0.5rem;
+      background-color: #f9f9f9;
       position: relative;
-      word-wrap: break-word;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      font-size: 1rem;
+    }
+
+    /* Reply banner up top */
+    #replyBanner {
+      display: none;
+      padding: 0.5rem;
+      background: #fafbfc;
+      border-left: 4px solid #ccc;
+      margin: 0 1rem 1rem 1rem;
+      position: relative;
+    }
+    #replyPreviewText {
+      font-weight: bold; color: #333; margin-left: 5px;
+    }
+
+    /* The message bubble */
+    .message {
+      display: flex;           /* let us stack content and footer in one column */
+      flex-direction: column;
+      align-self: flex-start;  /* default to left side */
+      padding: 0.8rem; margin-bottom: 0.5rem; border-radius: 6px;
+      max-width: 70%; word-wrap: break-word;
+      background-color: #fff;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
     .message.mine {
-      background-color: #dcf8c6;
-      float: right;
+      align-self: flex-end;    /* push bubble to right side */
+      background-color: #e1ffc7;
       text-align: right;
     }
-    .message.other {
-      background-color: #fff;
-      float: left;
-      text-align: left;
-      border: 1px solid #ddd;
+    .message-content {
+      display: flex; flex-direction: column; gap: 0.3rem;
     }
-    /* Sender name on top of the message if it's NOT mine */
-    .sender-name {
-      font-weight: bold;
-      margin-bottom: 0.3rem;
+    .reply-preview {
+      font-size: 0.9rem; color: #444; padding: 0.4rem;
+      border-left: 2px solid #999; background-color: #f0f0f0;
+      border-radius: 4px;
     }
-    .timestamp {
-      font-size: 0.8rem;
-      color: #999;
-      display: block;
+
+    .message-footer {
+      display: flex; align-items: center;
+      justify-content: space-between; /* time left, buttons right */
       margin-top: 0.3rem;
     }
-    .delete-btn {
-      position: absolute;
-      bottom: -3px;
-      right: 10px;
-      background: none;
-      border: none;
-      color: red;
-      cursor: pointer;
-      font-size: 0.8rem;
-      outline: none;
+    .timestamp {
+      font-size: 0.75rem; color: #999;
     }
-    .clear {
-      clear: both;
+
+    .action-buttons {
+      display: flex; gap: 5px; margin-left: auto;
     }
+    .delete-btn, .edit-btn, .reply-btn {
+      background: none; border: none; cursor: pointer;
+      font-size: 0.75rem; outline: none; padding: 2px 5px; border-radius: 3px;
+      transition: background-color 0.2s ease;
+    }
+    .delete-btn { color: red; }
+    .delete-btn:hover { background-color: rgba(255,0,0,0.1); }
+    .edit-btn { color: #007bff; }
+    .edit-btn:hover { background-color: rgba(0,123,255,0.1); }
+    .reply-btn { color: #888; }
+    .reply-btn:hover { background-color: rgba(136,136,136,0.1); }
+
+    /* Input area */
     #sendForm {
-      display: flex;
+      display: flex; padding: 0.8rem;
+      border-top: 1px solid #ddd; background-color: #fafafa; align-items: center;
     }
     #msgInput {
-      flex: 1;
-      padding: 0.5rem;
-      font-size: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+      flex: 1; padding: 0.5rem; font-size: 1rem;
+      border: 1px solid #ccc; border-radius: 4px;
     }
     #sendBtn {
-      padding: 0.5rem 1rem;
-      margin-left: 0.5rem;
-      font-size: 1rem;
-      background-color: #4CAF50;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
+      padding: 0.5rem 1rem; margin-left: 0.5rem; font-size: 1rem;
+      background-color: #4CAF50; color: white;
+      border: none; border-radius: 4px; cursor: pointer;
+      transition: background-color 0.3s ease;
     }
-    #sendBtn:hover {
-      background-color: #45a049;
-    }
-    /* Red button to go back to Dashboard */
-    .back-dashboard-btn {
-      background-color: red;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      padding: 0.5rem 1rem;
-      cursor: pointer;
-      margin-top: 1rem;
-    }
-    .back-dashboard-btn:hover {
-      background-color: darkred;
+    #sendBtn:hover { background-color: #45a049; }
+
+    @media (max-width: 768px) {
+      .chat-container { width: 95%; }
+      .message { max-width: 80%; }
     }
   </style>
 </head>
 <body>
+  <div class="top-bar">
+    <button class="back-btn" onclick="window.location.href='/dashboard'" title="Back to Dashboard">&#8592;</button>
+  </div>
+
   <div class="chat-container">
-    <!-- Header Section -->
+    <!-- Header -->
     <div class="chat-header">
       <div class="chat-title">
         <h2>{{ group_name }}</h2>
-        <!-- List the members plus count -->
-        <div class="chat-members" id="membersList">
-          Members:
-          {% for member in members %}
-            {% if member == owner %}
-              {{ member }} (owner)
-            {% else %}
-              {{ member }}
-            {% endif %}
-            {% if not loop.last %}, {% endif %}
-          {% endfor %}
-        </div>
-        <div id="membersCount">Total: {{ members|length }}</div>
+        <div class="chat-members" id="membersList">Members: (loading)</div>
+        <div id="membersCount">Total: --</div>
       </div>
-      <!-- Actions: Leave Group, Possibly Choose New Owner -->
       <div class="actions-area">
         <div id="ownerSelectContainer">
           <label for="newOwnerSelect">Select New Owner:</label>
           <select id="newOwnerSelect"></select>
         </div>
         <button class="leave-group-btn" onclick="leaveGroup()">Leave Group</button>
+        {% if owner == username %}
+          <button class="delete-group-btn" onclick="deleteGroup()">Delete Group</button>
+        {% endif %}
       </div>
     </div>
 
-    <!-- Owner Controls: Search & Add/Remove Users -->
+    <!-- Owner Controls: add/remove -->
     <div class="owner-controls" id="ownerControls">
       <label for="searchUserInput">Search Username:</label>
       <input type="text" id="searchUserInput" placeholder="Type to search..." autocomplete="off" />
       <div id="suggestions"></div>
     </div>
 
-    <!-- MESSAGES -->
-    <div id="messages-area">
-      {% set now_datetime = now_utc|to_datetime %}
-      {% for msg in messages %}
-        {% set isMine = (msg.sender == username) %}
-        <div 
-          class="message {% if isMine %}mine{% else %}other{% endif %}" 
-          id="msg_{{ msg._id }}"
-          title="{% if msg.read_by|length > 0 %}Seen by: {{ msg.read_by|join(', ') }}{% else %}Not seen yet{% endif %}"
-        >
-          {% if not isMine %}
-            <!-- Show sender name if it's not my message -->
-            <div class="sender-name">
-              {{ msg.sender }}{% if msg.sender == owner %} (owner){% endif %}
-            </div>
-          {% endif %}
-          {{ msg.message }}
-          
-          <!-- Timestamp logic -->
-          <span class="timestamp">
-            {% set msg_dt = msg.timestamp|to_datetime %}
-            {% if msg_dt and now_datetime %}
-              {% set diff = now_datetime - msg_dt %}
-              {% if diff.total_seconds() < 86400 %}
-                {{ msg_dt.strftime("%H:%M") }}
-              {% else %}
-                {{ msg_dt.strftime("%d %b %Y, %H:%M") }}
-              {% endif %}
-            {% else %}
-              N/A
-            {% endif %}
-          </span>
-
-          <!-- If I'm the sender or I'm the group owner, show delete button -->
-          {% if isMine or owner == username %}
-            <button class="delete-btn" onclick="deleteGroupMessage('{{ msg._id }}')">delete</button>
-          {% endif %}
-        </div>
-        <div class="clear"></div>
-      {% endfor %}
+    <!-- Reply Banner -->
+    <div id="replyBanner">
+      Replying to:
+      <span id="replyPreviewText"></span>
+      <button onclick="cancelReply()" style="margin-left:10px;cursor:pointer;">Cancel</button>
     </div>
 
-    <!-- Send New Message -->
+    <!-- Messages -->
+    <div class="messages-wrapper">
+      <div id="messages-area"></div>
+    </div>
+
+    <!-- Send Form -->
     <form id="sendForm" onsubmit="return sendMessage();">
       <input type="text" id="msgInput" placeholder="Type a message..." required />
       <button type="submit" id="sendBtn">Send</button>
     </form>
-
-    <!-- A red "Back to Dashboard" button at the bottom -->
-    <button class="back-dashboard-btn" onclick="window.location.href='/dashboard'">Back to Dashboard</button>
   </div>
 
   <script>
-    // =========== GLOBAL VARIABLES ============
-    // Safely serialize server-side variables into JavaScript using the tojson filter
+    /* ----- Request Queue ----- */
+    let requestQueue = [];
+    let isProcessing = false;
+    async function processQueue() {
+      if (isProcessing || requestQueue.length === 0) return;
+      isProcessing = true;
+      const operation = requestQueue.shift();
+      try { await operation(); }
+      catch (err) { console.error("Error processing request:", err); }
+      isProcessing = false;
+      processQueue();
+    }
+    function queueRequest(operation) {
+      requestQueue.push(operation);
+      processQueue();
+    }
+
+    /* ----- Globals ----- */
     let token = {{ session['token']|tojson }};
     let username = {{ username|tojson }};
     let groupName = {{ group_name|tojson }};
     let owner = {{ owner|tojson }};
     let isOwner = (owner === username);
     let groupMembers = {{ members|tojson }};
+    let nodeName = {{ node_name|tojson }};
     let refreshInProgress = false;
 
-    // Show the owner controls if the user is the owner
-    const ownerControlsDiv = document.getElementById('ownerControls');
-    if(isOwner){
-      ownerControlsDiv.style.display = "flex";
+    let currentReplyMsgId = null;
+    let currentReplyPreview = null;
+
+    /* Show/hide owner controls if I'm owner */
+    const ownerControlsDiv = document.getElementById("ownerControls");
+    if (isOwner) { ownerControlsDiv.style.display = "flex"; }
+
+    /* ----- REPLY LOGIC ----- */
+    function startReply(msgId, msgText) {
+      currentReplyMsgId = msgId;
+      currentReplyPreview = msgText.slice(0, 80);
+      if (msgText.length > 80) currentReplyPreview += "...";
+      document.getElementById("replyPreviewText").textContent = currentReplyPreview;
+      document.getElementById("replyBanner").style.display = "block";
+    }
+    function cancelReply() {
+      currentReplyMsgId = null;
+      currentReplyPreview = null;
+      document.getElementById("replyBanner").style.display = "none";
     }
 
-    // =========== Searching Users + Toggling Membership ===========
-  const searchInput = document.getElementById("searchUserInput");
-  const suggestionsDiv = document.getElementById("suggestions");
-
-  // Listen to each keystroke in the search input
-  searchInput.addEventListener("input", () => {
-    const partial = searchInput.value.trim();
-    if (!partial) {
-      // If empty input, hide suggestions
-      suggestionsDiv.style.display = "none";
-      suggestionsDiv.innerHTML = "";
-      return;
-    }
-
-    // Call our Flask endpoint: /search_users?query=partial
-    fetch(`/search_users?query=${encodeURIComponent(partial)}`)
-      .then(resp => {
-        if (resp.status === 401) {
-          throw new Error("401");  // Token might be invalid/expired
-        }
-        return resp.json();
-      })
-      .then(data => {
-        if (data.error) {
-          console.error("Error searching users:", data.error);
-          suggestionsDiv.style.display = "none";
-          return;
-        }
-        // If no results, handle gracefully
-        const foundUsers = data.users || [];
-        if (foundUsers.length === 0) {
-          suggestionsDiv.innerHTML = "<div class='suggestion-item'>No matches</div>";
-          suggestionsDiv.style.display = "block";
-        } else {
-          // Clear and rebuild suggestions
-          suggestionsDiv.innerHTML = "";
-          foundUsers.forEach(u => {
-            const inGroup = groupMembers.includes(u); 
-            // "Remove X" if in group, "Add X" if not
-            const item = document.createElement("div");
-            item.classList.add("suggestion-item");
-            item.textContent = (inGroup ? "Remove " : "Add ") + u;
-
-            // On click => toggle membership
-            item.onclick = () => toggleMembership(u, inGroup);
-
-            suggestionsDiv.appendChild(item);
-          });
-          suggestionsDiv.style.display = "block";
-        }
-      })
-      .catch(err => {
-        if (err.message === "401") {
-          // If token expired, refresh, then re-run
-          refreshToken().then(() => {
-            searchInput.dispatchEvent(new Event("input")); 
-            // Re-dispatch the event to continue searching
-          });
-        } else {
-          console.error("search_users error:", err);
-        }
-      });
-  });
-
-  // This function adds or removes a user from the group
-  function toggleMembership(targetUser, alreadyInGroup) {
-    // Decide which endpoint to call
-    const endpoint = alreadyInGroup ? "/remove_user_from_group" : "/add_user_to_group";
-    fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token: token,
-        group_name: groupName,
-        username: targetUser
-      })
-    })
-    .then(resp => resp.json())
-    .then(data => {
-      if (data.error) {
-        alert(data.error); 
-      } else {
-        // Update group membership on success
-        console.log(data.message);
-        fetchGroupMembers();  // We can re-fetch members to update UI
-      }
-      // Clear the search box and suggestions
-      searchInput.value = "";
-      suggestionsDiv.innerHTML = "";
-      suggestionsDiv.style.display = "none";
-    })
-    .catch(err => console.error("toggleMembership error:", err));
-  }
-
-  // =========== Real-Time Group Membership Updates ===========
-  // You already have the fetchGroupMessages() poll, 
-  // so let's also poll membership if you want an auto-update
-
-  function fetchGroupMembers() {
-    fetch(`/get_group_members?token=${encodeURIComponent(token)}&group_name=${encodeURIComponent(groupName)}`)
-      .then(resp => {
-        if (resp.status === 401) {
-          throw new Error("401");
-        }
-        return resp.json();
-      })
-      .then(data => {
-        if (data.error) {
-          console.error("Error fetching group members:", data.error);
-          return;
-        }
-        groupMembers = data.members;         // update the global array
-        owner = data.owner;                 // new owner if changed
-        isOwner = (owner === username);     // might also update your UI
-        updateMembersUI();
-      })
-      .catch(err => {
-        if (err.message === "401") {
-          refreshToken().then(() => fetchGroupMembers());
-        } else {
-          console.error("fetchGroupMembers error:", err);
-        }
-      });
-  }
-
-  function updateMembersUI() {
-    // Rebuild the top "Members: ..." list
-    const membersListEl = document.getElementById("membersList");
-    const membersCountEl = document.getElementById("membersCount");
-    membersListEl.innerHTML = "Members: ";
-
-    groupMembers.forEach((m, index) => {
-      if (m === owner) {
-        membersListEl.innerHTML += `${m} (owner)`;
-      } else {
-        membersListEl.innerHTML += m;
-      }
-      if (index < groupMembers.length - 1) {
-        membersListEl.innerHTML += ", ";
-      }
-    });
-    membersCountEl.textContent = `Total: ${groupMembers.length}`;
-
-    // Show/hide owner controls if user is or isn't the owner
-    const ocDiv = document.getElementById("ownerControls");
-    ocDiv.style.display = isOwner ? "flex" : "none";
-  }
-
-    // =========== REFRESH TOKEN FUNCTION ============
-    function refreshToken() {
-      if (refreshInProgress) return Promise.resolve();
+    /* ----- REFRESH TOKEN ----- */
+    async function refreshToken() {
+      if (refreshInProgress) return;
       refreshInProgress = true;
-
-      return fetch("/refresh_token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token })
-      })
-      .then(resp => resp.json())
-      .then(data => {
+      try {
+        const resp = await fetch("/refresh_token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: token })
+        });
+        const data = await resp.json();
         if (data.token) {
           token = data.token;
-          console.log("Token refreshed on client side:", token);
-          // Update in Flask session
-          return fetch("/update_token", {
+          await fetch("/update_token", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token: token })
-          }).then(r => r.json()).then(updateData => {
-            if (updateData.error) {
-              console.error("Failed to update token in session:", updateData.error);
-            } else {
-              console.log("Token updated in Flask session.");
-            }
           });
         } else {
           console.warn("Token refresh failed:", data);
         }
-      })
-      .catch(err => {
+      } catch (err) {
         console.error("Error refreshing token:", err);
-      })
-      .finally(() => {
+      } finally {
         refreshInProgress = false;
-      });
+      }
     }
 
-    // =========== FETCH GROUP MESSAGES ============
-    function fetchGroupMessages() {
-      fetch(`/get_group_messages?token=${encodeURIComponent(token)}&group_name=${encodeURIComponent(groupName)}`)
-        .then(resp => {
+    /* ----- SEARCH USERS (OWNER) ----- */
+    const searchInput = document.getElementById("searchUserInput");
+    const suggestionsDiv = document.getElementById("suggestions");
+    searchInput.addEventListener("input", () => {
+      const partial = searchInput.value.trim();
+      if (!partial) {
+        suggestionsDiv.style.display = "none";
+        suggestionsDiv.innerHTML = "";
+        return;
+      }
+      const formData = new URLSearchParams();
+      formData.append("node_name", nodeName);
+      formData.append("token", token);
+      formData.append("query", partial);
+
+      const operation = async () => {
+        try {
+          const resp = await fetch("/search_users_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: formData
+          });
           if (resp.status === 401) {
-            throw new Error("401");
+            await refreshToken();
+            queueRequest(operation);
+            return;
           }
-          return resp.json();
-        })
-        .then(data => {
+          const data = await resp.json();
+          if (data.error) {
+            console.error("Error searching users:", data.error);
+            suggestionsDiv.style.display = "none";
+            return;
+          }
+          const foundUsers = data.users || [];
+          if (foundUsers.length === 0) {
+            suggestionsDiv.innerHTML = "<div class='suggestion-item'>No matches</div>";
+            suggestionsDiv.style.display = "block";
+          } else {
+            suggestionsDiv.innerHTML = "";
+            foundUsers.forEach(u => {
+              const inGroup = groupMembers.includes(u);
+              const item = document.createElement("div");
+              item.classList.add("suggestion-item");
+              item.textContent = (inGroup ? "Remove " : "Add ") + u;
+              item.onclick = () => toggleMembership(u, inGroup);
+              suggestionsDiv.appendChild(item);
+            });
+            suggestionsDiv.style.display = "block";
+          }
+        } catch (err) {
+          console.error("search_users_via_erlang error:", err);
+        }
+      };
+      queueRequest(operation);
+    });
+    function toggleMembership(targetUser, alreadyInGroup) {
+      const endpoint = alreadyInGroup
+        ? "/remove_user_from_group_via_erlang"
+        : "/add_user_to_group_via_erlang";
+
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            group_name: groupName,
+            username: targetUser
+          };
+          const resp = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (resp.status === 401) {
+            await refreshToken();
+            queueRequest(operation);
+            return;
+          }
+          const data = await resp.json();
+          if (data.error) {
+            alert(data.error);
+          } else {
+            queueRequest(fetchGroupMembers);
+          }
+          searchInput.value = "";
+          suggestionsDiv.innerHTML = "";
+          suggestionsDiv.style.display = "none";
+        } catch (err) {
+          console.error("toggleMembership error:", err);
+        }
+      };
+      queueRequest(operation);
+    }
+
+    /* ----- GET/UPDATE GROUP MEMBERS ----- */
+    function fetchGroupMembers() {
+      const operation = async () => {
+        try {
+          const url = `/get_group_members_via_erlang?node_name=${encodeURIComponent(nodeName)}&token=${encodeURIComponent(token)}&group_name=${encodeURIComponent(groupName)}`;
+          const resp = await fetch(url);
+          if (resp.status === 401) {
+            await refreshToken();
+            queueRequest(fetchGroupMembers);
+            return;
+          }
+          const data = await resp.json();
+          if (data.error) {
+            console.error("Error fetching group members:", data.error);
+            return;
+          }
+          groupMembers = data.members;
+          owner = data.owner;
+          isOwner = (owner === username);
+          updateMembersUI();
+        } catch (err) {
+          console.error("fetchGroupMembers error:", err);
+        }
+      };
+      queueRequest(operation);
+    }
+    function updateMembersUI() {
+      const membersListEl = document.getElementById("membersList");
+      const membersCountEl = document.getElementById("membersCount");
+      membersListEl.innerHTML = "Members: ";
+      groupMembers.forEach((m, index) => {
+        if (m === owner) {
+          membersListEl.innerHTML += `${m} (owner)`;
+        } else {
+          membersListEl.innerHTML += m;
+        }
+        if (index < groupMembers.length - 1) {
+          membersListEl.innerHTML += ", ";
+        }
+      });
+      membersCountEl.textContent = `Total: ${groupMembers.length}`;
+      ownerControlsDiv.style.display = isOwner ? "flex" : "none";
+    }
+
+    /* ----- GET/RENDER GROUP MESSAGES ----- */
+    function fetchGroupMessages() {
+      const operation = async () => {
+        try {
+          const url = `/get_group_messages_via_erlang?node_name=${encodeURIComponent(nodeName)}&token=${encodeURIComponent(token)}&group_name=${encodeURIComponent(groupName)}`;
+          const resp = await fetch(url);
+          if (resp.status === 401) {
+            await refreshToken();
+            queueRequest(fetchGroupMessages);
+            return;
+          }
+          const data = await resp.json();
           if (data.error) {
             console.error("Error fetching group messages:", data.error);
             return;
           }
-          console.log("Fetched group messages:", data.group_messages); // Debugging line
           renderMessages(data.group_messages || []);
-        })
-        .catch(err => {
-          if (err.message === "401") {
-            refreshToken().then(() => fetchGroupMessages());
-          } else {
-            console.error("fetchGroupMessages error:", err);
-          }
-        });
+        } catch (err) {
+          console.error("fetchGroupMessages error:", err);
+        }
+      };
+      queueRequest(operation);
     }
 
-    // =========== RENDER MESSAGES FUNCTION ============
+    function formatTimestamp(isoStr) {
+      const dt = new Date(isoStr);
+      if (isNaN(dt)) return "N/A";
+      const now = new Date();
+      const diff = now - dt;
+      const oneDayMs = 24 * 3600 * 1000;
+      if (diff < oneDayMs) {
+        return dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      } else {
+        return dt.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })
+          + ", "
+          + dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      }
+    }
+
     function renderMessages(messages) {
       const container = document.getElementById("messages-area");
-      container.innerHTML = ""; // Clear existing messages
-
-      const now = new Date(); // Current time for timestamp calculations
+      const isAtBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) < 100;
+      container.innerHTML = "";
 
       messages.forEach(msg => {
-        const isMine = (msg.sender === username); // Check if the message is sent by the current user
-        const canDelete = isMine || (owner === username); // Determine if the delete button should be shown
+        const isMine = (msg.sender === username);
+        const bubble = document.createElement("div");
+        bubble.classList.add("message");
+        if (isMine) bubble.classList.add("mine");
 
-        // Create the message bubble
-        const msgDiv = document.createElement("div");
-        msgDiv.classList.add("message");
-        msgDiv.id = `msg_${msg._id}`; // Assign a unique ID to each message
+        // A content section
+        const contentDiv = document.createElement("div");
+        contentDiv.classList.add("message-content");
 
-        // Add appropriate classes based on the sender
-        if (isMine) {
-          msgDiv.classList.add("mine");
-        } else {
-          msgDiv.classList.add("other");
+        // If there's a reply preview
+        if (msg.reply_to && msg.reply_preview) {
+          const replyDiv = document.createElement("div");
+          replyDiv.classList.add("reply-preview");
+          replyDiv.textContent = msg.reply_preview;
+          contentDiv.appendChild(replyDiv);
         }
 
-        // If the message is sent by someone else, display the sender's name
-        if (!isMine) {
-          const senderNameDiv = document.createElement("div");
-          senderNameDiv.classList.add("sender-name");
-          senderNameDiv.textContent = msg.sender;
-          
-          // Append "(owner)" if the sender is the group owner
-          if (msg.sender === owner) {
-            senderNameDiv.textContent += " (owner)";
-          }
+        // Message text
+        const textSpan = document.createElement("span");
+        textSpan.textContent = msg.message;
+        contentDiv.appendChild(textSpan);
 
-          msgDiv.appendChild(senderNameDiv);
+        // (edited)
+        if (msg.edited) {
+          const editedSpan = document.createElement("span");
+          editedSpan.textContent = " (edited)";
+          editedSpan.style.fontStyle = "italic";
+          editedSpan.style.fontSize = "0.8rem";
+          contentDiv.appendChild(editedSpan);
         }
 
-        // Add the message text
-        const messageText = document.createElement("span");
-        messageText.textContent = msg.message;
-        msgDiv.appendChild(messageText);
+        bubble.appendChild(contentDiv);
 
-        // Format and add the timestamp
+        // Footer with timestamp + action buttons
+        const footerDiv = document.createElement("div");
+        footerDiv.classList.add("message-footer");
+
         const tsSpan = document.createElement("span");
         tsSpan.classList.add("timestamp");
-        const msgDate = new Date(msg.timestamp);
-        let formattedTime = "N/A";
+        tsSpan.textContent = formatTimestamp(msg.timestamp);
+        footerDiv.appendChild(tsSpan);
 
-        if (!isNaN(msgDate.getTime())) { // Check if the timestamp is valid
-          const diffMs = now - msgDate;
-          const oneDayMs = 24 * 60 * 60 * 1000;
+        // Action buttons
+        const canEditOrDelete = (msg.sender === username) || (owner === username);
+        const actionBtns = document.createElement("div");
+        actionBtns.classList.add("action-buttons");
 
-          if (diffMs < oneDayMs) {
-            // If the message is less than a day old, show only the time
-            formattedTime = msgDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-          } else {
-            // If older, show the date and time
-            formattedTime = `${msgDate.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}, ${msgDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-          }
-        }
+        // Reply
+        const replyBtn = document.createElement("button");
+        replyBtn.classList.add("reply-btn");
+        replyBtn.textContent = "↩";
+        replyBtn.title = "Reply";
+        replyBtn.onclick = () => startReply(msg._id, msg.message);
+        actionBtns.appendChild(replyBtn);
 
-        tsSpan.textContent = formattedTime;
-        msgDiv.appendChild(tsSpan);
-
-        // Add the delete button if the user can delete the message
-        if (canDelete) {
+        if (canEditOrDelete) {
+          // Edit
+          const editBtn = document.createElement("button");
+          editBtn.classList.add("edit-btn");
+          editBtn.textContent = "Edit";
+          editBtn.onclick = () => editGroupMessage(msg._id, msg.message);
+          actionBtns.appendChild(editBtn);
+          // Delete
           const delBtn = document.createElement("button");
           delBtn.classList.add("delete-btn");
-          delBtn.textContent = "delete";
-          delBtn.onclick = () => deleteGroupMessage(msg._id); // Pass the message ID
-          msgDiv.appendChild(delBtn);
+          delBtn.textContent = "Delete";
+          delBtn.onclick = () => deleteGroupMessage(msg._id);
+          actionBtns.appendChild(delBtn);
         }
 
-        // Handle read receipts
+        footerDiv.appendChild(actionBtns);
+        bubble.appendChild(footerDiv);
+
+        // If it's mine, show read_by in tooltip
         if (isMine) {
-          // Exclude the current user from the read_by list
-          const othersWhoRead = (msg.read_by || []).filter(reader => reader !== username);
-          if (othersWhoRead.length > 0) {
-            msgDiv.title = `Seen by: ${othersWhoRead.join(", ")}`;
-          } else {
-            msgDiv.title = "Not seen yet";
-          }
-        } else {
-          // Remove any existing title attribute for messages sent by others
-          msgDiv.removeAttribute("title");
+          const othersWhoRead = (msg.read_by || []).filter(r => r !== username);
+          bubble.title = (othersWhoRead.length > 0) ? `Seen by: ${othersWhoRead.join(", ")}` : "Not seen yet";
         }
 
-        // Append the message bubble and a clear div to handle floating
-        const clearDiv = document.createElement("div");
-        clearDiv.classList.add("clear");
-
-        container.appendChild(msgDiv);
-        container.appendChild(clearDiv);
+        container.appendChild(bubble);
       });
 
-      // Scroll to the bottom of the messages container to show the latest messages
-      container.scrollTop = container.scrollHeight;
+      if (isAtBottom) {
+        container.scrollTop = container.scrollHeight;
+      }
     }
 
-    // =========== SEND A NEW MESSAGE ============
+    /* ----- SEND GROUP MESSAGE (with reply) ----- */
     function sendMessage() {
       const msgInput = document.getElementById("msgInput");
       const msgText = msgInput.value.trim();
-      if(!msgText) return false;
+      if (!msgText) return false;
 
-      fetch("/send_group_message", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-          token: token,
-          group_name: groupName,
-          message: msgText
-        })
-      })
-      .then(response => {
-        if(response.status === 401){
-          throw new Error("401");
-        }
-        return response.json();
-      })
-      .then(data => {
-        if(data.error){
-          alert("Error sending group message: " + data.error);
-        } else {
-          msgInput.value = "";
-          fetchGroupMessages(); // Refresh messages
-        }
-      })
-      .catch(err => {
-        if(err.message === "401") {
-          refreshToken().then(() => sendMessage());
-        } else {
-          console.error("send_group_message error:", err);
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            group_name: groupName,
+            message: msgText
+          };
+          if (currentReplyMsgId) {
+            payload.reply_to_msg_id = currentReplyMsgId;
+            payload.reply_preview = currentReplyPreview;
+          }
+
+          const resp = await fetch("/send_group_message_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (resp.status === 401) {
+            await refreshToken();
+            queueRequest(operation);
+            return;
+          }
+          const data = await resp.json();
+          if (data.error) {
+            alert("Error sending group message: " + data.error);
+          } else {
+            msgInput.value = "";
+            cancelReply(); // reset the reply state
+            queueRequest(fetchGroupMessages);
+          }
+        } catch (err) {
+          console.error("send_group_message_via_erlang error:", err);
           alert("Failed to send group message.");
         }
-      });
-
-      return false; // Prevent form submission
+      };
+      queueRequest(operation);
+      return false; // prevent default form submission
     }
 
-    // =========== DELETE A GROUP MESSAGE ============
-    function deleteGroupMessage(messageId) {
-      console.log("Attempting to delete message:", messageId); // Debugging line
-      console.log("Token:", token); // Debugging line
-      console.log("Group Name:", groupName); // Debugging line
+    /* ----- EDIT GROUP MESSAGE ----- */
+    function editGroupMessage(messageId, oldText) {
+      const newText = prompt("Edit your message:", oldText);
+      if (!newText || newText.trim() === oldText) return;
 
-      fetch("/delete_group_message", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          token: token,             // Ensure 'token' is defined and valid
-          group_name: groupName,    // Ensure 'groupName' is correctly set
-          message_id: messageId     // The ID of the message to delete
-        })
-      })
-      .then(response => {
-        if (response.status === 401) {
-          throw new Error("401");
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            group_name: groupName,
+            message_id: messageId,
+            new_text: newText.trim()
+          };
+          const resp = await fetch("/edit_group_message_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (resp.status === 401) {
+            await refreshToken();
+            queueRequest(operation);
+            return;
+          }
+          const data = await resp.json();
+          if (data.error) {
+            alert("Error editing group message: " + data.error);
+          } else {
+            queueRequest(fetchGroupMessages);
+          }
+        } catch (err) {
+          console.error("editGroupMessage error:", err);
+          alert("Failed to edit group message.");
         }
-        return response.json();
-      })
-      .then(data => {
-        if (data.error) {
-          alert("Error deleting group message: " + data.error);
-        } else {
-          // Optionally remove the message from the DOM or re-fetch messages
-          fetchGroupMessages();
-        }
-      })
-      .catch(err => {
-        if (err.message === "401") {
-          refreshToken().then(() => deleteGroupMessage(messageId));
-        } else {
+      };
+      queueRequest(operation);
+    }
+
+    /* ----- DELETE GROUP MESSAGE ----- */
+    function deleteGroupMessage(messageId) {
+      const confirmDelete = confirm("Are you sure you want to delete this message?");
+      if (!confirmDelete) return;
+
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            group_name: groupName,
+            message_id: messageId
+          };
+          const resp = await fetch("/delete_group_message_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (resp.status === 401) {
+            await refreshToken();
+            queueRequest(operation);
+            return;
+          }
+          const data = await resp.json();
+          if (data.error) {
+            alert("Error deleting group message: " + data.error);
+          } else {
+            queueRequest(fetchGroupMessages);
+          }
+        } catch (err) {
           console.error("deleteGroupMessage error:", err);
           alert("Failed to delete group message.");
         }
-      });
+      };
+      queueRequest(operation);
     }
 
-    // =========== POLLING ============
-    document.addEventListener("DOMContentLoaded", () => {
-      fetchGroupMessages();
-      setInterval(fetchGroupMessages, 5000); // Poll every 5 seconds
-    });
+    /* ----- DELETE GROUP (owner) ----- */
+    function deleteGroup() {
+      const confirmDel = confirm("Are you sure you want to delete the entire group? This cannot be undone.");
+      if (!confirmDel) return;
 
-    // =========== LEAVE GROUP FUNCTION ============
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            group_name: groupName
+          };
+          const resp = await fetch("/delete_group_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (resp.status === 401) {
+            await refreshToken();
+            queueRequest(operation);
+            return;
+          }
+          const data = await resp.json();
+          if (data.error) {
+            alert("Error deleting group: " + data.error);
+          } else {
+            alert(data.message);
+            window.location.href = "/dashboard";
+          }
+        } catch (err) {
+          console.error("deleteGroup error:", err);
+          alert("Failed to delete group.");
+        }
+      };
+      queueRequest(operation);
+    }
+
+    /* ----- LEAVE GROUP ----- */
     function leaveGroup() {
-      if(!isOwner){
-        // Ordinary member leaves the group
-        removeUserFromGroup(username);
+      if (!isOwner) {
+        removeUserFromGroup_viaErlang(username);
       } else {
-        // Owner attempts to leave the group, must reassign ownership
-        if(groupMembers.length < 2){
+        if (groupMembers.length < 2) {
           alert("You cannot leave if you are the only member. Consider deleting the group instead.");
           return;
         }
-        // Display the ownership reassignment UI
         const osc = document.getElementById("ownerSelectContainer");
         osc.style.display = "flex";
         const newOwnerSelect = document.getElementById("newOwnerSelect");
         newOwnerSelect.innerHTML = "";
-        groupMembers.forEach(member => {
-          if(member !== username){
+        groupMembers.forEach(m => {
+          if (m !== username) {
             const opt = document.createElement("option");
-            opt.value = member;
-            opt.textContent = member;
+            opt.value = m;
+            opt.textContent = m;
             newOwnerSelect.appendChild(opt);
           }
         });
         newOwnerSelect.onchange = () => {
           const chosenNewOwner = newOwnerSelect.value;
-          if(!chosenNewOwner) return;
-          reassignOwnershipAndLeave(chosenNewOwner);
+          if (!chosenNewOwner) return;
+          reassignOwnershipAndLeave_viaErlang(chosenNewOwner);
         };
       }
     }
-
-    function removeUserFromGroup(userToRemove) {
-      fetch("/remove_user_from_group", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token: token,
-          group_name: groupName,
-          username: userToRemove
-        })
-      })
-      .then(resp => resp.json())
-      .then(data => {
-        if(data.error){
-          alert("Error removing user: " + data.error);
-        } else {
-          alert("You have left the group.");
-          window.location.href = "/dashboard";
+    function removeUserFromGroup_viaErlang(userToRemove) {
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            group_name: groupName,
+            username: userToRemove
+          };
+          const resp = await fetch("/remove_user_from_group_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (resp.status === 401) {
+            await refreshToken();
+            queueRequest(operation);
+            return;
+          }
+          const data = await resp.json();
+          if (data.error) {
+            alert("Error removing user: " + data.error);
+          } else {
+            alert("You have left the group.");
+            window.location.href = "/dashboard";
+          }
+        } catch (err) {
+          console.error("removeUserFromGroup_viaErlang error:", err);
+          alert("Failed to leave the group.");
         }
-      })
-      .catch(e => console.error("removeUserFromGroup error:", e));
+      };
+      queueRequest(operation);
+    }
+    function reassignOwnershipAndLeave_viaErlang(newOwner) {
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            group_name: groupName,
+            new_owner: newOwner
+          };
+          const resp = await fetch("/reassign_group_owner_and_remove_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (resp.status === 401) {
+            await refreshToken();
+            queueRequest(operation);
+            return;
+          }
+          const data = await resp.json();
+          if (data.error) {
+            alert("Error reassigning ownership: " + data.error);
+          } else {
+            alert(data.message);
+            window.location.href = "/dashboard";
+          }
+        } catch (err) {
+          console.error("reassignOwnershipAndLeave_viaErlang error:", err);
+          alert("Failed to reassign ownership.");
+        }
+      };
+      queueRequest(operation);
     }
 
-    function reassignOwnershipAndLeave(newOwner) {
-      fetch("/reassign_group_owner_and_remove", {
-        method: "POST",
-        headers: { "Content-Type":"application/json" },
-        body: JSON.stringify({
-          token: token,
-          group_name: groupName,
-          new_owner: newOwner
-        })
-      })
-      .then(resp => resp.json())
-      .then(data => {
-        if(data.error){
-          alert("Error reassigning ownership: " + data.error);
-        } else {
-          alert(data.message);
-          window.location.href = "/dashboard";
-        }
-      })
-      .catch(e => console.error("reassignOwnershipAndLeave error:", e));
+    /* ----- AUTO-REFRESH MESSAGES ----- */
+    function setupAutoRefresh() {
+      setInterval(() => {
+        queueRequest(async () => {
+          await fetchGroupMembers();
+          await fetchGroupMessages();
+        });
+      }, 6000);
     }
+
+    /* ----- ON LOAD ----- */
+    document.addEventListener("DOMContentLoaded", () => {
+      queueRequest(async () => {
+        await fetchGroupMembers();
+        await fetchGroupMessages();
+      });
+      setupAutoRefresh();
+    });
   </script>
 </body>
 </html>
