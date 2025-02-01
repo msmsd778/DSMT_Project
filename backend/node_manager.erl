@@ -201,7 +201,6 @@ refresh_token_loop() ->
     end.
 
 
-
 %% Terminate the refresh_token_loop process for a given user
 terminate_refresh_loop(Username) when is_binary(Username) ->
     case ets:lookup(?ACTIVE_SESSIONS, Username) of

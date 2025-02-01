@@ -1,2 +1,8 @@
+Flask
 pymongo
-flask
+bcrypt
+flask-limiter
+apscheduler
+werkzeug
+requests
+python-dateutil

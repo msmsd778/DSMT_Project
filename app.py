@@ -21,6 +21,7 @@ import dateutil.parser
 import tempfile
 import json
 import glob
+import socket
 
 
 app = Flask(__name__)
@@ -68,7 +69,6 @@ def validate_token(token):
     return None
 
 @app.route('/refresh_token', methods=['POST'])
-# @limiter.limit("2000 per hour")
 def refresh_token():
     data = request.json
     token = data.get('token')
@@ -91,7 +91,7 @@ def refresh_token():
         {"_id": session_doc["_id"]},
         {"$set": {
             "token": new_token,
-            "expires_at": datetime.datetime.utcnow() + datetime.timedelta(hours=2)
+            "expires_at": datetime.datetime.utcnow() + datetime.timedelta(hours=168)
         }}
     )
 
@@ -1309,10 +1309,26 @@ def get_profile_picture():
 
 @app.route("/")
 def index():
+    # Grab the hostname that Python sees:
+    my_hostname = socket.gethostname()  # e.g. "Asus-k571gt"
+    
+    # Build a default node name, e.g. "node1@Asus-k571gt"
+    default_nodename = f"node1@{my_hostname}"
+
     if "username" in session and "token" in session:
-        return render_template("index.html", is_logged_in=True, username=session["username"])
+        # They’re already logged in
+        return render_template(
+            "index.html",
+            is_logged_in=True,
+            username=session["username"],
+            default_nodename=default_nodename
+        )
     else:
-        return render_template("index.html", is_logged_in=False)
+        return render_template(
+            "index.html",
+            is_logged_in=False,
+            default_nodename=default_nodename
+        )
 
 
 def parse_erlang_ok_list(stdout_str):
@@ -1643,19 +1659,15 @@ def register_via_erlang():
     password = request.form.get('reg_password')
     profile_pic = request.files.get('reg_profile_pic')
 
-    # Validate mandatory fields
-    if not node_name or not username or not password:
-        flash("Erlang Node Name, Username, and Password are required for registration.", "error")
-        return render_template("index.html", is_logged_in=False)
-
-    # Call node_manager:register_user
+    # 1. Call node_manager:register_user(...) to create the user in Erlang/Flask
     reg_result = call_erlang_function(
         node_name=node_name,
         function='register_user',
         args=[username, password]
     )
+
     if "ReturnVal: {ok," in reg_result['stdout']:
-        # Registration succeeded. Now login
+        # 2. Then login...
         login_result = call_erlang_function(
             node_name=node_name,
             function='login_user',
@@ -1664,54 +1676,54 @@ def register_via_erlang():
         if "ReturnVal: {ok," in login_result['stdout']:
             token = extract_token_from_stdout(login_result['stdout'])
             if token:
-                # Save to session
+                # Save in session
                 session['username'] = username
                 session['token'] = token
                 session['node_name'] = node_name
 
-                # If user uploaded a profile pic, process it
+                # 3. If user uploaded a profile pic, we used to call /set_profile_picture
                 if profile_pic and profile_pic.filename != '':
                     try:
                         file_bytes = profile_pic.read()
                         base64_data = base64.b64encode(file_bytes).decode('utf-8')
 
-                        # Determine the file extension without the dot
+                        # Determine the file extension (without dot)
                         _, file_extension = os.path.splitext(profile_pic.filename)
-                        file_extension = file_extension.lower().lstrip('.')  # Remove the dot
-                        if file_extension not in ['png', 'jpg', 'jpeg', 'gif', 'bmp']:
-                            flash(f"Unsupported image format: {file_extension}", "error")
-                            return render_template("index.html", is_logged_in=False)
+                        file_extension = file_extension.lower().lstrip('.')  # remove the dot
 
-                        # Prepare payload for profile picture update
+                        # Instead of calling /set_profile_picture,
+                        # call /set_profile_picture_via_erlang
                         payload = {
+                            "node_name": node_name,
                             "token": token,
                             "image_data": base64_data,
-                            "extension": file_extension  # Send without the dot
+                            "extension": file_extension
                         }
+
+                        # Perform a FORM POST (since the route expects form-data):
                         resp = requests.post(
-                            "http://localhost:5000/set_profile_picture",
-                            json=payload
+                            "http://localhost:5000/set_profile_picture_via_erlang",
+                            data=payload
                         )
                         if resp.status_code == 200:
                             flash("Registration and profile picture upload successful!", "success")
                         else:
                             error_msg = resp.json().get("error", "Failed to set profile picture.")
-                            flash(f"Registration successful, but profile picture upload failed: {error_msg}", "error")
+                            flash(f"Registration succeeded, but picture upload failed: {error_msg}", "error")
                     except Exception as e:
-                        flash(f"Registration succeeded, but an error occurred while uploading the profile picture: {str(e)}", "error")
+                        flash(f"Registration ok, but error uploading profile picture: {str(e)}", "error")
                         return render_template("index.html", is_logged_in=False)
 
                 else:
                     flash("Registration successful!", "success")
 
-                # Redirect to dashboard
+                # Redirect to dashboard on success
                 return redirect(url_for('dashboard'))
             else:
-                flash("Registration was successful, but failed to retrieve token from login.", "error")
+                flash("Registration was successful, but we couldn’t retrieve token from login.", "error")
                 return render_template("index.html", is_logged_in=False)
         else:
             flash("Registration succeeded, but login failed in Erlang.", "error")
-            flash(f"Login Output: {reg_result['stdout']}", "error")
             return render_template("index.html", is_logged_in=False)
     elif "ReturnVal: {error," in reg_result['stdout']:
         error_message = extract_error_from_stdout(reg_result['stdout'])
@@ -1719,8 +1731,8 @@ def register_via_erlang():
         return render_template("index.html", is_logged_in=False)
     else:
         flash("Registration command finished with an unknown outcome.", "error")
-        flash(f"Output: {reg_result['stdout']}", "error")
         return render_template("index.html", is_logged_in=False)
+
 
 
 def extract_error_from_stdout(stdout_str):

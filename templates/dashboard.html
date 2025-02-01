@@ -336,7 +336,7 @@
     // ---------------------- FETCH CHAT PARTNERS ----------------------
     function fetchChatPartnersViaErlang() {
       const formData = new FormData();
-      formData.append('node_name', nodeName);  // **UPDATED: Use dynamic nodeName**
+      formData.append('node_name', nodeName);
       formData.append('token', token);
 
       return fetch('/get_chat_partners_via_erlang', {

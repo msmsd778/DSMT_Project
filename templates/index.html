@@ -140,7 +140,7 @@
             <h2>Register</h2>
             <form action="/register_via_erlang" method="POST" enctype="multipart/form-data" novalidate>
               <label for="reg_nodeName">Erlang Node Name <span style="color: red;">*</span>:</label>
-              <input type="text" id="reg_nodeName" name="reg_nodeName" value="node1@Asus-k571gt" required />
+              <input type="text" id="reg_nodeName" name="reg_nodeName" value="{{ default_nodename }}" required />
 
               <label for="reg_username">Username <span style="color: red;">*</span>:</label>
               <input type="text" id="reg_username" name="reg_username" required />
@@ -160,7 +160,7 @@
             <h2>Login</h2>
             <form action="/login_via_erlang" method="POST" novalidate>
               <label for="login_nodeName">Erlang Node Name <span style="color: red;">*</span>:</label>
-              <input type="text" id="login_nodeName" name="login_nodeName" value="node1@Asus-k571gt" required />
+              <input type="text" id="login_nodeName" name="login_nodeName" value="{{ default_nodename }}" required />
 
               <label for="login_username">Username <span style="color: red;">*</span>:</label>
               <input type="text" id="login_username" name="login_username" required />
