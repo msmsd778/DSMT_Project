@@ -11,7 +11,6 @@
       padding: 0;
     }
 
-    /* Top bar solely for the back button */
     .top-bar {
       height: 50px;
       background: #fafafa;
@@ -48,7 +47,6 @@
       position: relative;
     }
 
-    /* Chat header */
     .chat-header {
       display: flex;
       align-items: center;
@@ -68,12 +66,29 @@
       margin-left: 1rem; font-size: 0.9rem; color: #555;
     }
     .block-btn {
-      background-color: #ff5252; border: none; color: white;
+      background-color:rgb(220, 28, 28); border: none; color: white;
       padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer;
       font-size: 0.9rem; position: absolute; right: 1rem; top: 1.2rem; z-index: 2;
     }
     .block-btn:hover {
-      background-color: #ff2e2e;
+      background-color:rgb(195, 16, 16);
+    }
+
+    .delete-chat-btn {
+      background-color:rgb(174, 43, 34);
+      border: none;
+      color: white;
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      position: absolute;
+      right: 6rem;  /* Adjust as needed so it sits beside the block button */
+      top: 1.2rem;
+      z-index: 2;
+    }
+    .delete-chat-btn:hover {
+      background-color:rgb(101, 23, 23);
     }
 
     .messages-wrapper {
@@ -85,10 +100,9 @@
       background-color: #f9f9f9; position: relative;
     }
 
-    /* A standard bubble design using flex alignment instead of float */
     .message {
       display: flex; flex-direction: column;
-      align-self: flex-start; /* default to left side */
+      align-self: flex-start;
       padding: 0.8rem;
       border-radius: 6px;
       max-width: 70%;
@@ -107,7 +121,6 @@
       border-radius: 4px; margin-top: -0.2rem;
     }
 
-    /* We separate main content (text + (edited)) from the footer (time + actions) */
     .message-content {
       display: flex; flex-direction: column; gap: 0.3rem;
     }
@@ -138,9 +151,8 @@
     .reply-btn { color: #888; }
     .reply-btn:hover { background-color: rgba(136,136,136,0.1); }
 
-    /* Reply Banner */
     #replyBanner {
-      display: none; padding: 0.5rem; background: #fafbfc;
+      display: none; padding: 0.5rem; background:rgb(184, 191, 198);
       border-left: 4px solid #ccc; margin: 0 1rem 1rem 1rem;
       position: relative;
     }
@@ -148,7 +160,6 @@
       font-weight: bold; color: #333; margin-left: 5px;
     }
 
-    /* Input area for text */
     #sendForm {
       display: flex; padding: 0.8rem;
       border-top: 1px solid #ddd; background-color: #fafafa; align-items: center;
@@ -176,13 +187,11 @@
   </style>
 </head>
 <body>
-  <!-- Top Bar -->
   <div class="top-bar">
     <button class="back-btn" onclick="window.location.href='/dashboard'" title="Back to Dashboard">&#8592;</button>
   </div>
 
   <div class="chat-container">
-    <!-- Chat Header -->
     <div class="chat-header">
       <img src="/profile_pictures/default_profile.png" alt="Profile Picture" id="profilePicture" />
       <div>
@@ -198,9 +207,9 @@
         </span>
       </div>
       <button class="block-btn" id="blockBtn">Block</button>
+      <button class="delete-chat-btn" id="deleteChatBtn">Delete Chat</button>
     </div>
 
-    <!-- Reply Banner -->
     <div id="replyBanner">
       Replying to:
       <span id="replyPreviewText"></span>
@@ -211,7 +220,6 @@
       <div id="messages-area"></div>
     </div>
 
-    <!-- Send form -->
     <form id="sendForm" onsubmit="return sendMessage();">
       <input type="text" id="msgInput" placeholder="Type a message..." />
       <button type="submit" id="sendBtn">Send</button>
@@ -219,13 +227,9 @@
   </div>
 
   <script>
-    /* ---------------------- Request Queue Implementation ---------------------- */
-    let requestQueue = []; // Stores pending operations
-    let isProcessing = false; // Indicates if an operation is in progress
+    let requestQueue = [];
+    let isProcessing = false;
 
-    /**
-     * Processes the next operation in the queue.
-     */
     async function processQueue() {
       if (isProcessing || requestQueue.length === 0) return;
       isProcessing = true;
@@ -239,18 +243,11 @@
       processQueue();
     }
 
-    /**
-     * Adds an operation to the queue.
-     * @param {Function} operation - An asynchronous function representing the operation.
-     */
     function queueRequest(operation) {
       requestQueue.push(operation);
       console.log("Queued operation:", operation.name || "Anonymous Function");
-      processQueue(); // Start processing if not already running
+      processQueue();
     }
-    /* -------------------------------------------------------------------------- */
-
-    /* ----------------------------- Chat Functionality ---------------------------- */
     let token = {{ session['token']|tojson }};
     const otherUser = {{ other_user|tojson }};
     const currentUser = {{ username|tojson }};
@@ -263,9 +260,6 @@
     let currentReplyMsgId = null;
     let currentReplyPreview = null;
 
-    /**
-     * Updates the state of the send button based on block status.
-     */
     function updateSendButton() {
       const sendBtn = document.getElementById("sendBtn");
       if (isBlocked || otherSideBlockedUs) {
@@ -275,9 +269,6 @@
       }
     }
 
-    /**
-     * Refreshes the authentication token.
-     */
     async function refreshToken() {
       if (refreshInProgress) return;
       refreshInProgress = true;
@@ -307,10 +298,7 @@
       }
     }
 
-    /**
-     * Fetches and renders chat messages.
-     */
-     async function refreshMessages() {
+    async function refreshMessages() {
       const payload = {
         node_name: nodeName,
         token: token,
@@ -344,19 +332,12 @@
   
       } catch (err) {
         console.error("refreshMessages error:", err);
-        // DO NOT rethrow, to allow the queue to continue
-        // throw err; // removed
       }
     }
 
-    /**
-     * Renders messages in the chat area.
-     * @param {Array} messages - Array of message objects.
-     */
     function renderMessages(messages) {
       const container = document.getElementById("messages-area");
       
-      // Check if the user is near the bottom before updating
       const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
       
       container.innerHTML = "";
@@ -373,7 +354,6 @@
           messageDiv.appendChild(replyDiv);
         }
 
-        // Display text message
         const textSpan = document.createElement("span");
         textSpan.textContent = msg.message;
         messageDiv.appendChild(textSpan);
@@ -453,18 +433,11 @@
         container.appendChild(clearDiv);
       });
 
-      // Restore scroll position if the user was at the bottom
       if (isAtBottom) {
         container.scrollTop = container.scrollHeight;
       }
-      // Else, maintain the current scroll position
     }
 
-    /**
-     * Initiates a reply to a specific message.
-     * @param {String} msgId - The ID of the message being replied to.
-     * @param {String} msgText - The text of the message being replied to.
-     */
     function startReply(msgId, msgText) {
       currentReplyMsgId = msgId;
       currentReplyPreview = msgText.slice(0, 80);
@@ -473,20 +446,14 @@
       document.getElementById("replyPreviewText").textContent = currentReplyPreview;
     }
 
-    /**
-     * Cancels the current reply action.
-     */
     function cancelReply() {
       currentReplyMsgId = null;
       currentReplyPreview = null;
       document.getElementById("replyBanner").style.display = "none";
     }
 
-    /**
-     * Sends a new message.
-     * @returns {Boolean} - Prevents default form submission.
-     */
-     function sendMessage() {
+
+    function sendMessage() {
       const msgInput = document.getElementById("msgInput");
       const msgText = msgInput.value.trim();
       if (!msgText) return false;
@@ -526,7 +493,6 @@
             msgInput.value = "";
             cancelReply();
   
-            // Instead of immediate await refreshMessages(), do a short delay
             setTimeout(() => {
               queueRequest(refreshMessages);
             }, 300);
@@ -541,15 +507,10 @@
       return false;
     }
 
-    /**
-     * Deletes a message.
-     * @param {String} msgId - The ID of the message to delete.
-     */
     function deleteMessage(msgId) {
       const confirmDelete = confirm("Are you sure you want to delete this message?");
       if (!confirmDelete) return;
 
-      // Define the operation as an async function
       const operation = async () => {
         try {
           const payload = {
@@ -569,7 +530,7 @@
           if (response.status === 401) {
             console.warn("Unauthorized. Refreshing token and re-queuing deleteMessage.");
             await refreshToken();
-            queueRequest(operation); // Re-queue the delete operation after token refresh
+            queueRequest(operation);
             return;
           }
 
@@ -580,7 +541,7 @@
             alert("Error deleting message: " + data.error);
           } else {
             console.log("Message deleted successfully:", data);
-            await refreshMessages();  // Refresh the chat messages after deletion
+            await refreshMessages();
           }
         } catch (err) {
           console.error("deleteMessage error:", err);
@@ -588,20 +549,13 @@
         }
       };
 
-      // Queue the delete operation
       queueRequest(operation);
     }
 
-    /**
-     * Edits a message.
-     * @param {String} msgId - The ID of the message to edit.
-     * @param {String} oldText - The current text of the message.
-     */
     function editMessage(msgId, oldText) {
       const newText = prompt("Edit your message:", oldText);
       if (!newText || newText.trim() === oldText) return;
 
-      // Define the operation as an async function
       const operation = async () => {
         try {
           const payload = {
@@ -622,7 +576,7 @@
           if (response.status === 401) {
             console.warn("Unauthorized. Refreshing token and re-queuing editMessage.");
             await refreshToken();
-            queueRequest(operation); // Re-queue the edit operation after token refresh
+            queueRequest(operation);
             return;
           }
 
@@ -632,7 +586,7 @@
               alert("Error editing message: " + data.error);
             } else {
               console.log("Message edited successfully:", data);
-              await refreshMessages();  // Refresh the messages after editing
+              await refreshMessages();
             }
           } else {
             throw new Error(`HTTP error! Status: ${response.status}`);
@@ -643,13 +597,56 @@
         }
       };
 
-      // Queue the edit operation
       queueRequest(operation);
     }
 
-    /**
-     * Toggles the block status of the other user.
-     */
+    function deleteChat() {
+      const confirmDelete = confirm("Are you sure you want to delete every message with this user?");
+      if (!confirmDelete) return;
+    
+      const operation = async () => {
+        try {
+          const payload = {
+            node_name: nodeName,
+            token: token,
+            other_user: otherUser
+          };
+          console.log("Deleting entire chat:", payload);
+    
+          const response = await fetch("/delete_chat_via_erlang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+    
+          if (response.status === 401) {
+            console.warn("Unauthorized. Refreshing token and re-queuing deleteChat.");
+            await refreshToken();
+            queueRequest(operation);
+            return;
+          }
+    
+          if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+    
+          const data = await response.json();
+          if (data.error) {
+            alert("Error deleting chat: " + data.error);
+          } else {
+            alert("Chat deleted successfully.");
+            window.location.href = "/dashboard";
+          }
+        } catch (err) {
+          console.error("deleteChat error:", err);
+          alert("Failed to delete chat.");
+        }
+      };
+    
+      queueRequest(operation);
+    }
+
+
     function toggleBlock() {
       if (!nodeName) {
         console.error("Node name is missing! Cannot proceed.");
@@ -657,7 +654,6 @@
         return;
       }
 
-      // Define the operation as an async function
       const operation = async () => {
         try {
           const payload = {
@@ -677,7 +673,7 @@
           if (resp.status === 401) {
             console.warn("Unauthorized. Refreshing token and re-queuing toggleBlock.");
             await refreshToken();
-            queueRequest(operation); // Re-queue the toggle block operation after token refresh
+            queueRequest(operation);
             return;
           }
 
@@ -690,8 +686,8 @@
             alert("Error: " + data.error);
           } else {
             console.log("Block status toggled successfully:", data);
-            isBlocked = !isBlocked;  // Toggle block state
-            updateBlockButton();  // Update UI
+            isBlocked = !isBlocked;
+            updateBlockButton();
             updateSendButton();
             alert(data.message);
           }
@@ -701,13 +697,9 @@
         }
       };
 
-      // Queue the toggle block operation
       queueRequest(operation);
     }
 
-    /**
-     * Checks the block status between users.
-     */
     async function checkBlockStatus() {
       if (!nodeName) {
         console.error("Node name is missing! Cannot proceed.");
@@ -732,7 +724,7 @@
         if (response.status === 401) {
           console.warn("Unauthorized. Refreshing token and re-queuing checkBlockStatus.");
           await refreshToken();
-          queueRequest(checkBlockStatus); // Re-queue the check block status operation after token refresh
+          queueRequest(checkBlockStatus);
           return;
         }
 
@@ -750,25 +742,19 @@
         updateSendButton();
       } catch (err) {
         console.error("checkBlockStatus error:", err);
-        throw err; // Re-throw to handle in the queue
+        throw err;
       }
     }
 
-    /**
-     * Updates the text of the block/unblock button.
-     */
     function updateBlockButton() {
       const btn = document.getElementById("blockBtn");
       btn.textContent = isBlocked ? "Unblock" : "Block";
     }
 
-    /**
-     * Refreshes the user's online status.
-     */
     async function refreshUserStatus() {
       if (!nodeName) {
         console.error("Error: Node name is missing!");
-        return;  // Do not throw to allow queue to continue
+        return;
       }
 
       const payload = {
@@ -789,7 +775,7 @@
         if (response.status === 401) {
           console.warn("Unauthorized. Refreshing token and re-queuing refreshUserStatus.");
           await refreshToken();
-          queueRequest(refreshUserStatus); // Re-queue the refresh user status operation after token refresh
+          queueRequest(refreshUserStatus);
           return;
         }
 
@@ -805,14 +791,10 @@
         updateStatusUI(data);
       } catch (err) {
         console.error("refreshUserStatus error:", err);
-        throw err; // Re-throw to handle in the queue
+        throw err;
       }
     }
 
-    /**
-     * Updates the user's status in the UI.
-     * @param {Object} stData - Status data from the server.
-     */
     function updateStatusUI(stData) {
       const statusSpan = document.querySelector(".chat-header .status");
 
@@ -850,9 +832,6 @@
       }
     }
 
-    /**
-     * Fetches the user's profile picture.
-     */
     function fetchProfilePicture() {
       const payload = {
         node_name: nodeName,
@@ -860,7 +839,6 @@
         username: otherUser
       };
 
-      // Define the operation as an async function
       const operation = async () => {
         try {
           console.log("Fetching profile picture:", payload);
@@ -873,7 +851,7 @@
           if (response.status === 401) {
             console.warn("Unauthorized. Refreshing token and re-queuing fetchProfilePicture.");
             await refreshToken();
-            queueRequest(operation); // Re-queue the fetch profile picture operation after token refresh
+            queueRequest(operation);
             return;
           }
 
@@ -887,7 +865,6 @@
           } else {
             const profileImg = document.getElementById("profilePicture");
             
-            // Make sure the profile picture is not null or empty
             if (data.profile_picture && data.profile_picture !== "/profile_pictures/default_profile.png") {
               profileImg.src = data.profile_picture;
               console.log("Profile picture updated to:", data.profile_picture);
@@ -897,61 +874,50 @@
           }
         } catch (err) {
           console.error("fetchProfilePicture error:", err);
-          throw err; // Re-throw to handle in the queue
+          throw err;
         }
       };
 
-      // Queue the fetch profile picture operation
       queueRequest(operation);
     }
 
-    /**
-     * Initializes the chat by fetching necessary data.
-     */
     function initialFetchChat() {
       queueRequest(async () => {
         try {
           await checkBlockStatus();
           await refreshMessages();
           await refreshUserStatus();
-          await fetchProfilePicture();  // Ensure all operations complete
+          await fetchProfilePicture();
         } catch (err) {
           console.error("initialFetchChat error:", err);
         }
       });
     }
-    /* -------------------------------------------------------------------------- */
-
-    /* ------------------------- Periodic Auto-Refresh ------------------------- */
-    /**
-     * Sets up periodic auto-refresh of chat data.
-     */
     function setupAutoRefresh() {
       setInterval(() => {
-        // Always queue refresh operations, regardless of isProcessing
         queueRequest(async () => {
           try {
             await checkBlockStatus();
             await refreshMessages();
             await refreshUserStatus();
-            await fetchProfilePicture(); // Ensure all operations complete
+            await fetchProfilePicture();
           } catch (err) {
             console.error("Auto-refresh error:", err);
           }
         });
-      }, 6000); // Refresh every 6 seconds
+      }, 6000);
     }
-    /* -------------------------------------------------------------------------- */
 
-    /* ----------------------------- Event Listeners ---------------------------- */
     document.addEventListener("DOMContentLoaded", () => {
       initialFetchChat();
       setupAutoRefresh();
 
       const blockBtn = document.getElementById("blockBtn");
       blockBtn.addEventListener("click", toggleBlock);
+
+      const deleteChatBtn = document.getElementById("deleteChatBtn");
+      deleteChatBtn.addEventListener("click", deleteChat);
     });
-    /* -------------------------------------------------------------------------- */
   </script>
 </body>
 </html>

@@ -5,9 +5,9 @@
          stop_node/0, logout_user/2, delete_group_message/3, reassign_group_owner_and_remove/3,
          remove_user_from_group/3, replace_session/2, refresh_token/0, get_group_messages/2,
          get_chat_partners/1, get_user_groups/1, get_user_status/2, handle_logout/1,
-         upload_profile_picture/0, get_profile_picture/2, handle_group_deletion/1,
+         get_profile_picture/2, handle_group_deletion/1, delete_chat/2,
          get_current_user_token/0, get_group_members/2, reassign_group_owner_and_remove/2,
-         get_unread_counts/1, change_user_password/3, change_user_picture/3, search_users/2,
+         get_unread_counts/1, change_user_password/3, set_profile_picture/3, search_users/2,
          toggle_block_user/2, check_block_status/2, edit_message/3, edit_group_message/4]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -19,7 +19,7 @@
 
 %% Initialize the Node Manager
 init() ->
-    code:add_patha("C:/Users/padidar/Documents/DSMT Project/backend/deps/jsx/ebin"),
+    code:add_patha("deps/jsx/ebin"),
     ensure_inets_started(),
     ensure_ets_table(?ACTIVE_NODES, [named_table, set, public], true),
     ensure_ets_table(?ACTIVE_USERS, [named_table, set, public], true),
@@ -56,7 +56,7 @@ register_user(Username, Password) when is_binary(Username), is_binary(Password) 
             {error, "Please logout before registering a new user."};
         {error, _Reason} ->
             ensure_inets_started(),
-            URL = "http://localhost:5000/register",
+            URL = dynamic_url(<<"/register">>),
 
             %% Construct JSON payload
             Payload = #{
@@ -70,7 +70,6 @@ register_user(Username, Password) when is_binary(Username), is_binary(Password) 
             %% Make HTTP POST request
             case http_request(post, URL, Headers, JSON) of
                 {ok, Body} ->
-                    %% Decode the response JSON
                     JsonMap = jsx:decode(Body, [return_maps]),
                     case maps:get(<<"message">>, JsonMap, undefined) of
                         undefined ->
@@ -87,8 +86,7 @@ register_user(Username, Password) when is_binary(Username), is_binary(Password) 
     
     end.
 
-%% change_user_password(Token, OldPass, NewPass)
-%% same style: call /internal_change_password?token=...&old_password=...&new_password=...
+
 change_user_password(TokenList, OldList, NewList) when is_list(TokenList);
                                                    is_list(OldList);
                                                    is_list(NewList) ->
@@ -99,21 +97,19 @@ change_user_password(TokenList, OldList, NewList) when is_list(TokenList);
 change_user_password(UserToken, OldPass, NewPass)
   when is_binary(UserToken), is_binary(OldPass), is_binary(NewPass) ->
     ensure_inets_started(),
-    %% Build the URL as a GET with query string
     QParams = <<
       "token=", UserToken/binary,
       "&old_password=", OldPass/binary,
       "&new_password=", NewPass/binary
     >>,
-    URL = <<"http://localhost:5000/internal_change_password?", QParams/binary>>,
+    URL = dynamic_url(<<"/internal_change_password?", QParams/binary>>),
     Headers = [{"Accept", "application/json"}],
-    case http_request(get, binary_to_list(URL), Headers, "") of
+    case http_request(get, URL, Headers, "") of
         {ok, Body} ->
             try
                 JsonMap = jsx:decode(Body, [return_maps]),
                 case maps:get(<<"message">>, JsonMap, undefined) of
                     undefined ->
-                        %% If there's an error field
                         ErrorMaybe = maps:get(<<"error">>, JsonMap, undefined),
                         case ErrorMaybe of
                             undefined ->
@@ -138,19 +134,15 @@ change_user_password(UserToken, OldPass, NewPass)
     end.
 
 
-change_user_picture(Token, TempFilePath, Ext) when is_list(Token), is_list(TempFilePath), is_list(Ext) ->
-    change_user_picture(list_to_binary(Token), list_to_binary(TempFilePath), list_to_binary(Ext));
+set_profile_picture(Token, TempFilePath, Ext) when is_list(Token), is_list(TempFilePath), is_list(Ext) ->
+    set_profile_picture(list_to_binary(Token), list_to_binary(TempFilePath), list_to_binary(Ext));
 
-change_user_picture(UserToken, TempFilePathBin, Ext) when is_binary(UserToken), is_binary(TempFilePathBin), is_binary(Ext) ->
+set_profile_picture(UserToken, TempFilePathBin, Ext) when is_binary(UserToken), is_binary(TempFilePathBin), is_binary(Ext) ->
     ensure_inets_started(),
-    %% Convert binary TempFilePath to string
     FilePath = binary_to_list(TempFilePathBin),
-    %% Read the temp file contents (Base64Data)
     case file:read_file(FilePath) of
         {ok, Base64DataBin} ->
-            %% Convert binary to string
             Base64Data = binary_to_list(Base64DataBin),
-            %% Prepare JSON payload
             PayloadMap = #{
                 <<"token">> => UserToken,
                 <<"image_data">> => list_to_binary(Base64Data),
@@ -158,9 +150,8 @@ change_user_picture(UserToken, TempFilePathBin, Ext) when is_binary(UserToken), 
             },
             Payload = iolist_to_binary(jsx:encode(PayloadMap)),
             Headers = [{"Content-Type", "application/json"}],
-            URL = "http://localhost:5000/internal_set_profile_picture",
+            URL = dynamic_url(<<"/internal_set_profile_picture">>),
 
-            %% Make the HTTP POST request to Flask
             case http_request(post, URL, Headers, Payload) of
                 {ok, Body} ->
                     try
@@ -179,7 +170,7 @@ change_user_picture(UserToken, TempFilePathBin, Ext) when is_binary(UserToken), 
                             {error, "Invalid JSON response"}
                     end;
                 {error, Reason} ->
-                    io:format("HTTP request failed in change_user_picture: ~p~n", [Reason]),
+                    io:format("HTTP request failed in set_profile_picture: ~p~n", [Reason]),
                     {error, Reason}
             end;
         {error, Reason} ->
@@ -217,24 +208,20 @@ terminate_refresh_loop(Username) when is_binary(Username) ->
 
 
 %% Refresh the current user's token
-%% refresh_token() -> {ok, NewToken} | {error, Reason}
 refresh_token() ->
     case get_current_user() of
         {ok, Username} ->
             case get_user_token(Username) of
                 {ok, Token} ->
-                    %% Construct JSON payload
                     Payload = #{
                         <<"token">> => Token
                     },
                     JSON = jsx:encode(Payload),
                     Headers = [{"Content-Type", "application/json"}],
-                    URL = "http://localhost:5000/refresh_token",
+                    URL = dynamic_url(<<"/refresh_token">>),
                     
-                    %% Make HTTP POST request without binary_to_list
                     case http_request(post, URL, Headers, JSON) of
                         {ok, Body} ->
-                            %% Decode JSON response with return_maps option
                             JsonMap = jsx:decode(Body, [return_maps]),
                             case maps:get(<<"token">>, JsonMap, undefined) of
                                 undefined ->
@@ -263,7 +250,6 @@ refresh_token() ->
 replace_session(Username, NewToken) when is_binary(Username), is_binary(NewToken) ->
     case ets:lookup(?ACTIVE_SESSIONS, Username) of
         [{Username, _OldToken, _OldPid}] ->
-            %% Just update the token; no refresh loop needed
             ets:insert(?ACTIVE_SESSIONS, {Username, NewToken, undefined}),
             ets:delete(?CURRENT_SESSION, <<"current_user">>),
             ets:insert(?CURRENT_SESSION, {<<"current_user">>, Username}),
@@ -285,7 +271,7 @@ login_user(Username, Password) when is_list(Username), is_list(Password) ->
             {error, "A user is already logged in. Please logout first."};
         {error, _Reason} ->
             ensure_inets_started(),
-            URL = "http://localhost:5000/internal_login",
+            URL = dynamic_url(<<"/internal_login">>),
             Payload = #{
                 <<"username">> => BinaryUsername,
                 <<"password">> => BinaryPassword,
@@ -301,9 +287,7 @@ login_user(Username, Password) when is_list(Username), is_list(Password) ->
                     if
                         Token =/= undefined ->
                             io:format("Login successful for user ~s.~n", [binary_to_list(BinaryUsername)]),
-                            %% **NEW: Remove existing session before inserting a new one**
                             ets:delete_all_objects(?ACTIVE_SESSIONS),
-                            %% Insert the new session
                             ets:insert(?ACTIVE_SESSIONS, {BinaryUsername, Token, undefined}),
                             ets:delete_all_objects(?CURRENT_SESSION),
                             ets:insert(?CURRENT_SESSION, {<<"current_user">>, BinaryUsername}),
@@ -321,13 +305,11 @@ login_user(Username, Password) when is_list(Username), is_list(Password) ->
     end.
 
 
-%% Make the 0-arg logout_user() just call the 2-arg version with the correct token
 logout_user(Username, Token) when is_list(Username), is_list(Token) ->
     logout_user(list_to_binary(Username), list_to_binary(Token));
 logout_user(Username, Token) when is_binary(Username), is_binary(Token) ->
     io:format("logout_user/2 called for ~p with token ~p~n", [Username, Token]),
 
-    %% 1) Check if ETS sees that user (with correct or mismatched token)
     case ets:lookup(?ACTIVE_SESSIONS, Username) of
         [{Username, TokenStored, RefreshPid}] ->
             if TokenStored =/= Token ->
@@ -344,7 +326,6 @@ logout_user(Username, Token) when is_binary(Username), is_binary(Token) ->
             io:format("No active session found in ETS for ~p.~n", [Username])
     end,
 
-    %% 2) Clear CURRENT_SESSION if it's them
     case ets:lookup(?CURRENT_SESSION, <<"current_user">>) of
         [{<<"current_user">>, Username}] ->
             ets:delete(?CURRENT_SESSION, <<"current_user">>),
@@ -353,7 +334,6 @@ logout_user(Username, Token) when is_binary(Username), is_binary(Token) ->
             ok
     end,
 
-    %% 3) Call Python /logout to remove DB session and set user offline
     Payload = iolist_to_binary(jsx:encode(#{<<"token">> => Token})),
     Headers = [{"Content-Type", "application/json"}],
     case http_request(post, "http://localhost:5000/internal_logout", Headers, Payload) of
@@ -363,7 +343,6 @@ logout_user(Username, Token) when is_binary(Username), is_binary(Token) ->
             io:format("Failed to call Python /logout: ~p~n", [Reason])
     end,
 
-    %% 4) Propagate logout to ALL connected nodes
     propagate_logout(Username),
 
     {ok, "Logout successful in Erlang."}.
@@ -413,7 +392,6 @@ get_user_token(Username) when is_binary(Username) ->
 get_current_user_token() ->
     case ets:lookup(?CURRENT_SESSION, <<"current_user">>) of
         [{<<"current_user">>, Username}] ->
-            %% Look up the user's token in ACTIVE_SESSIONS
             case ets:lookup(?ACTIVE_SESSIONS, Username) of
                 [{Username, Token, _RefreshPid}] ->
                     {ok, Token};
@@ -430,14 +408,13 @@ get_user_status(UserToken, Username) when is_list(UserToken), is_list(Username) 
 get_user_status(UserToken, Username) when is_binary(UserToken), is_binary(Username) ->
     ensure_inets_started(),
 
-    %% Construct JSON request body
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"username">> => Username
     }),
 
     Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
-    URL = "http://localhost:5000/internal_get_user_status",
+    URL = dynamic_url(<<"/internal_get_user_status">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -459,7 +436,6 @@ get_user_status(UserToken, Username) when is_binary(UserToken), is_binary(Userna
     end.
 
 
-%%% 1) Clause for list args => convert to binary
 send_message(UserToken, Receiver, MsgText, ReplyId, ReplyPreview)
   when is_list(UserToken), is_list(Receiver), is_list(MsgText),
        is_list(ReplyId), is_list(ReplyPreview) ->
@@ -471,7 +447,6 @@ send_message(UserToken, Receiver, MsgText, ReplyId, ReplyPreview)
       list_to_binary(ReplyPreview)
     );
 
-%%% 2) Clause for binary args => call /internal_send_message
 send_message(UserToken, Receiver, MsgText, ReplyId, ReplyPreview)
   when is_binary(UserToken), is_binary(Receiver),
        is_binary(MsgText), is_binary(ReplyId), is_binary(ReplyPreview) ->
@@ -488,7 +463,7 @@ send_message(UserToken, Receiver, MsgText, ReplyId, ReplyPreview)
       {"Content-Type", "application/json"},
       {"Accept", "application/json"}
     ],
-    URL = "http://localhost:5000/internal_send_message",
+    URL = dynamic_url(<<"/internal_send_message">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -515,7 +490,6 @@ edit_message(UserToken, MessageID, NewText) when is_list(UserToken), is_list(Mes
 edit_message(UserToken, MessageID, NewText) when is_binary(UserToken), is_binary(MessageID), is_binary(NewText) ->
     ensure_inets_started(),
 
-    %% Construct JSON request body
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"message_id">> => MessageID,
@@ -523,11 +497,11 @@ edit_message(UserToken, MessageID, NewText) when is_binary(UserToken), is_binary
     }),
 
     Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
-    URL = "http://localhost:5000/internal_edit_message",
+    URL = dynamic_url(<<"/internal_edit_message">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
-            io:format("Raw HTTP response for edit message: ~s~n", [Body]),  %% Debugging
+            io:format("Raw HTTP response for edit message: ~s~n", [Body]),
             try
                 JsonMap = jsx:decode(Body, [return_maps]),
                 case maps:get(<<"error">>, JsonMap, undefined) of
@@ -552,7 +526,6 @@ process_one_to_one_message(Msg, _CurrentUser) ->
     Message   = maps:get(<<"message">>,  Msg, <<"">>),
     Timestamp = maps:get(<<"timestamp">>,Msg, <<"">>),
 
-    %% Return only the essential fields
     #{
       <<"sender">>    => Sender,
       <<"receiver">>  => Receiver,
@@ -566,14 +539,13 @@ get_messages(UserToken, OtherUser) when is_list(UserToken), is_list(OtherUser) -
 get_messages(UserToken, OtherUser) when is_binary(UserToken), is_binary(OtherUser) ->
     ensure_inets_started(),
 
-    %% Construct JSON request body
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"other_user">> => OtherUser
     }),
 
     Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
-    URL = "http://localhost:5000/internal_get_messages",
+    URL = dynamic_url(<<"/internal_get_messages">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -600,14 +572,13 @@ check_block_status(UserToken, OtherUser) when is_list(UserToken), is_list(OtherU
 check_block_status(UserToken, OtherUser) when is_binary(UserToken), is_binary(OtherUser) ->
     ensure_inets_started(),
 
-    %% Construct JSON request body
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"other_user">> => OtherUser
     }),
 
     Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
-    URL = "http://localhost:5000/internal_check_block_status",
+    URL = dynamic_url(<<"/internal_check_block_status">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -628,15 +599,54 @@ check_block_status(UserToken, OtherUser) when is_binary(UserToken), is_binary(Ot
     end.
 
 
+delete_chat(UserToken, OtherUser) 
+  when is_list(UserToken), is_list(OtherUser) ->
+    delete_chat(list_to_binary(UserToken), list_to_binary(OtherUser));
+
+delete_chat(UserToken, OtherUser)
+  when is_binary(UserToken), is_binary(OtherUser) ->
+    ensure_inets_started(),
+
+    RequestBody = jsx:encode(#{
+      <<"token">> => UserToken,
+      <<"other_user">> => OtherUser
+    }),
+
+    Headers = [
+      {"Content-Type", "application/json"},
+      {"Accept", "application/json"}
+    ],
+    URL = dynamic_url(<<"/internal_delete_chat">>),
+
+    case http_request(post, URL, Headers, RequestBody) of
+        {ok, Body} ->
+            try
+                JsonMap = jsx:decode(Body, [return_maps]),
+                case maps:get(<<"error">>, JsonMap, undefined) of
+                    undefined ->
+                        %% success => get message
+                        Msg = maps:get(<<"message">>, JsonMap, <<"Chat deleted successfully.">>),
+                        {ok, Msg};
+                    ErrorMsg ->
+                        {error, ErrorMsg}
+                end
+            catch
+                _:Err ->
+                    {error, "Invalid JSON from /internal_delete_chat"}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+
 %% get_chat_partners(Token) -> {ok, Partners} | {error, Reason}
 get_chat_partners(UserToken) when is_list(UserToken) ->
     get_chat_partners(list_to_binary(UserToken));
 get_chat_partners(UserToken) when is_binary(UserToken) ->
     ensure_inets_started(),
-    %% Make a direct call to /internal_get_chat_partners?token=UserToken
-    URL = <<"http://localhost:5000/internal_get_chat_partners?token=", UserToken/binary>>,
+    URL = dynamic_url(<<"/internal_get_chat_partners?token=", UserToken/binary>>),
     Headers = [{"Accept", "application/json"}],
-    case http_request(get, binary_to_list(URL), Headers, "") of
+    case http_request(get, URL, Headers, "") of
         {ok, Body} ->
             try
                 JsonMap = jsx:decode(Body, [return_maps]),
@@ -666,22 +676,18 @@ get_group_messages(UserToken, GroupName)
       list_to_binary(UserToken),
       list_to_binary(GroupName)
     );
-get_group_messages(UserToken, GroupName)
-    when is_binary(UserToken), is_binary(GroupName) ->
+get_group_messages(UserToken, GroupName) when is_binary(UserToken), is_binary(GroupName) ->
     ensure_inets_started(),
-
-    %% We'll do a GET request: /internal_get_group_messages?token=...&group_name=...
-    QueryString = <<"token=", UserToken/binary, "&group_name=", GroupName/binary>>,
-    URL = <<"http://localhost:5000/internal_get_group_messages?", QueryString/binary>>,
+    EncodedGroupName = list_to_binary(http_uri:encode(binary_to_list(GroupName))),
+    QueryString = <<"token=", UserToken/binary, "&group_name=", EncodedGroupName/binary>>,
+    URL = dynamic_url(<<"/internal_get_group_messages?", QueryString/binary>>),
     Headers = [{"Accept", "application/json"}],
-
-    case http_request(get, binary_to_list(URL), Headers, "") of
+    case http_request(get, URL, Headers, "") of
         {ok, Body} ->
             try
                 JsonMap = jsx:decode(Body, [return_maps]),
                 case maps:get(<<"error">>, JsonMap, undefined) of
                     undefined ->
-                        %% Expecting "group_messages": [...]
                         Messages = maps:get(<<"group_messages">>, JsonMap, []),
                         {ok, Messages};
                     ErrorMsg ->
@@ -696,20 +702,15 @@ get_group_messages(UserToken, GroupName)
     end.
 
 
+
 %% Process individual group message for display
 process_group_message(Msg, CurrentUser) ->
     Sender    = maps:get(<<"sender">>,   Msg, <<>>),
     Message   = maps:get(<<"message">>,  Msg, <<>>),
     Timestamp = maps:get(<<"timestamp">>,Msg, <<>>),
     ReadByBin = maps:get(<<"read_by">>,  Msg, []),
-
-    %% Convert each binary in read_by to a char-list for string operations
     ReadByLists = [ binary_to_list(BinUser) || BinUser <- ReadByBin ],
-
-    %% Determine if the current user sent this message
     Sent = (Sender =:= CurrentUser),
-
-    %% If sent by current user, show read receipts
     ReadStatus =
       case Sent of
         true ->
@@ -721,7 +722,6 @@ process_group_message(Msg, CurrentUser) ->
             ""
       end,
 
-    %% Return processed message as a map
     #{
       <<"sender">>     => Sender,
       <<"message">>    => Message,
@@ -740,7 +740,6 @@ display_group_messages(GroupMessages) ->
         Sent = maps:get(<<"sent">>, Msg, false),
         ReadStatus = maps:get(<<"read_status">>, Msg, ""),
         
-        %% Format message display with timestamp
         Display = if
             Sent ->
                 "[Sent] " ++ Message ++ " (" ++ ReadStatus ++ ") at " ++ Timestamp;
@@ -758,16 +757,14 @@ create_group(UserToken, GroupName, Members) when is_list(UserToken), is_list(Gro
 create_group(UserToken, GroupName, Members) when is_binary(UserToken), is_binary(GroupName), is_list(Members) ->
     ensure_inets_started(),
 
-    %% Convert members list to JSON
     MembersJson = jsx:encode(Members),
 
-    %% Construct the request body
     FormData = iolist_to_binary([
         <<"token=">>, UserToken, <<"&group_name=">>, GroupName, <<"&members=">>, MembersJson
     ]),
 
     Headers = [{"Content-Type", "application/x-www-form-urlencoded"}],
-    URL = <<"http://localhost:5000/internal_create_group">>,
+    URL = dynamic_url(<<"/internal_create_group">>),
 
     case httpc:request(post, {binary_to_list(URL), Headers, "application/x-www-form-urlencoded", binary_to_list(FormData)}, [], []) of
         {ok, {{_, 201, _}, _, Body}} ->
@@ -780,17 +777,27 @@ create_group(UserToken, GroupName, Members) when is_binary(UserToken), is_binary
             {error, Reason}
     end.
 
-handle_json_response(Body) when is_list(Body) ->
-    handle_json_response(list_to_binary(Body));  % Convert list to binary
 
+handle_json_response(Body) when is_list(Body) ->
+    handle_json_response(list_to_binary(Body));
 handle_json_response(Body) when is_binary(Body) ->
+    Clean = binary:replace(Body, <<"ReturnVal:">>, <<>>, [global]),
+    CleanTrim = string:trim(Clean),
+    Clean2 = binary:replace(CleanTrim, <<"{n ">>, <<"{">>, [global]),
     try 
-        case jsx:decode(Body, [return_maps]) of
-            #{<<"message">> := Message} -> {ok, binary_to_list(Message)};
-            _ -> {error, "Unexpected JSON format from Flask."}
+        Decoded = jsx:decode(Clean2, [return_maps]),
+        case Decoded of
+            #{<<"message">> := Message} ->
+                {ok, binary_to_list(Message)};
+            #{<<"error">> := ErrorMsg} ->
+                {error, binary_to_list(ErrorMsg)};
+            _ ->
+                io:format("DEBUG: Unexpected JSON: ~s~n", [Clean2]),
+                {error, "Unexpected JSON format from Flask."}
         end
     catch
-        _:Err -> {error, "Failed to parse JSON from Flask."}
+        _:Err ->
+            {error, "Failed to parse JSON from Flask."}
     end.
 
 
@@ -802,7 +809,6 @@ delete_group(UserToken, GroupName)
     when is_binary(UserToken), is_binary(GroupName) ->
     ensure_inets_started(),
 
-    %% Build JSON request body
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"group_name">> => GroupName
@@ -811,7 +817,7 @@ delete_group(UserToken, GroupName)
         {"Content-Type", "application/json"},
         {"Accept", "application/json"}
     ],
-    URL = "http://localhost:5000/internal_delete_group",
+    URL = dynamic_url(<<"/internal_delete_group">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -847,11 +853,7 @@ propagate_group_deletion(GroupName) when is_binary(GroupName) ->
 
 %% Handle incoming group deletion from another node
 handle_group_deletion(GroupName) when is_binary(GroupName) ->
-    %% Remove group-related data if stored locally
-    %% Example: remove from ETS if groups are stored
-    %% ets:delete(?GROUPS, GroupName),
     io:format("Group ~s has been deleted from the system.~n", [binary_to_list(GroupName)]),
-    %% Optionally, delete any cached messages or perform additional cleanup
     ok.
 
 
@@ -876,7 +878,7 @@ reassign_group_owner_and_remove(UserToken, GroupName, NewOwner)
         {"Content-Type", "application/json"},
         {"Accept", "application/json"}
     ],
-    URL = "http://localhost:5000/internal_reassign_group_owner_and_remove",
+    URL = dynamic_url(<<"/internal_reassign_group_owner_and_remove">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -904,13 +906,11 @@ get_user_groups(UserToken) when is_list(UserToken) ->
     get_user_groups(list_to_binary(UserToken));
 get_user_groups(UserToken) when is_binary(UserToken) ->
     ensure_inets_started(),
-    %% Call the internal Flask endpoint with the token
     QParams = <<"token=", UserToken/binary>>,
-    URL = <<"http://localhost:5000/internal_get_user_groups?", QParams/binary>>,
+    URL = dynamic_url(<<"/internal_get_user_groups?", QParams/binary>>),
     Headers = [{"Accept", "application/json"}],
-    case http_request(get, binary_to_list(URL), Headers, "") of
+    case http_request(get, URL, Headers, "") of
         {ok, Body} ->
-            %% Decode JSON response
             try
                 JsonMap = jsx:decode(Body, [return_maps]),
                 case maps:get(<<"group_names">>, JsonMap, undefined) of
@@ -942,7 +942,6 @@ add_user_to_group(UserToken, GroupName, UsernameToAdd) when is_list(UserToken), 
 add_user_to_group(UserToken, GroupName, UsernameToAdd) when is_binary(UserToken), is_binary(GroupName), is_binary(UsernameToAdd) ->
     ensure_inets_started(),
 
-    %% Build JSON request body
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"group_name">> => GroupName,
@@ -954,14 +953,13 @@ add_user_to_group(UserToken, GroupName, UsernameToAdd) when is_binary(UserToken)
         {"Accept", "application/json"}
     ],
 
-    URL = "http://localhost:5000/internal_add_user_to_group",  %% The new internal endpoint
+    URL = dynamic_url(<<"/internal_add_user_to_group">>),
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
             try
                 JsonMap = jsx:decode(Body, [return_maps]),
                 case maps:get(<<"error">>, JsonMap, undefined) of
                     undefined ->
-                        %% No "error" => success
                         Message = maps:get(<<"message">>, JsonMap, <<"Successfully added user">>),
                         {ok, Message};
                     ErrorMsg ->
@@ -978,7 +976,6 @@ add_user_to_group(UserToken, GroupName, UsernameToAdd) when is_binary(UserToken)
     end.
 
 
-%% Same pattern for remove_user_from_group/3
 remove_user_from_group(UserToken, GroupName, UsernameToRemove) when is_list(UserToken), is_list(GroupName), is_list(UsernameToRemove) ->
     remove_user_from_group(
         list_to_binary(UserToken),
@@ -997,7 +994,7 @@ remove_user_from_group(UserToken, GroupName, UsernameToRemove) when is_binary(Us
         {"Content-Type", "application/json"},
         {"Accept", "application/json"}
     ],
-    URL = "http://localhost:5000/internal_remove_user_from_group",
+    URL = dynamic_url(<<"/internal_remove_user_from_group">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -1005,7 +1002,6 @@ remove_user_from_group(UserToken, GroupName, UsernameToRemove) when is_binary(Us
                 JsonMap = jsx:decode(Body, [return_maps]),
                 case maps:get(<<"error">>, JsonMap, undefined) of
                     undefined ->
-                        %% success
                         Message = maps:get(<<"message">>, JsonMap, <<"User removed successfully">>),
                         {ok, Message};
                     ErrorMsg ->
@@ -1022,20 +1018,17 @@ remove_user_from_group(UserToken, GroupName, UsernameToRemove) when is_binary(Us
     end.
     
 
-%%% 1) Clause for list args => convert to binary
 send_group_message(UserToken, GroupName, MsgText, ReplyId, ReplyPreview)
   when is_list(UserToken), is_list(GroupName), is_list(MsgText),
        is_list(ReplyId), is_list(ReplyPreview) ->
-    % Convert them to binary and call the second clause
     send_group_message(
       list_to_binary(UserToken),
       list_to_binary(GroupName),
       list_to_binary(MsgText),
       list_to_binary(ReplyId),
       list_to_binary(ReplyPreview)
-    );  %% <--- NOTICE THE SEMICOLON HERE
+    );
 
-%%% 2) Clause for binary args => actually do the HTTP request
 send_group_message(UserToken, GroupName, MsgText, ReplyId, ReplyPreview)
   when is_binary(UserToken), is_binary(GroupName),
        is_binary(MsgText), is_binary(ReplyId), is_binary(ReplyPreview) ->
@@ -1052,7 +1045,7 @@ send_group_message(UserToken, GroupName, MsgText, ReplyId, ReplyPreview)
       {"Content-Type", "application/json"},
       {"Accept", "application/json"}
     ],
-    URL = "http://localhost:5000/internal_send_group_message",
+    URL = dynamic_url(<<"/internal_send_group_message">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -1071,7 +1064,7 @@ send_group_message(UserToken, GroupName, MsgText, ReplyId, ReplyPreview)
             end;
         {error, Reason} ->
             {error, Reason}
-    end.  %% <--- PERIOD HERE (last clause)
+    end.
 
 
 delete_message(UserToken, MessageID) when is_list(UserToken), is_list(MessageID) ->
@@ -1079,14 +1072,13 @@ delete_message(UserToken, MessageID) when is_list(UserToken), is_list(MessageID)
 delete_message(UserToken, MessageID) when is_binary(UserToken), is_binary(MessageID) ->
     ensure_inets_started(),
 
-    %% Construct JSON request body
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"message_id">> => MessageID
     }),
 
     Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
-    URL = "http://localhost:5000/internal_delete_message",
+    URL = dynamic_url(<<"/internal_delete_message">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -1115,12 +1107,10 @@ delete_group_message(UserToken, GroupName, MsgId)
       list_to_binary(MsgId)
     );
 
-%%% 2) If arguments are already binary, do the actual HTTP request:
 delete_group_message(UserToken, GroupName, MsgId)
     when is_binary(UserToken), is_binary(GroupName), is_binary(MsgId) ->
     ensure_inets_started(),
 
-    %% Build JSON body
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"group_name">> => GroupName,
@@ -1130,7 +1120,7 @@ delete_group_message(UserToken, GroupName, MsgId)
         {"Content-Type", "application/json"},
         {"Accept", "application/json"}
     ],
-    URL = "http://localhost:5000/internal_delete_group_message",
+    URL = dynamic_url(<<"/internal_delete_group_message">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -1138,7 +1128,6 @@ delete_group_message(UserToken, GroupName, MsgId)
                 JsonMap = jsx:decode(Body, [return_maps]),
                 case maps:get(<<"error">>, JsonMap, undefined) of
                     undefined ->
-                        %% success
                         Message = maps:get(<<"message">>, JsonMap, <<"Deleted OK">>),
                         {ok, Message};
                     ErrorMsg ->
@@ -1178,7 +1167,7 @@ edit_group_message(UserToken, GroupName, MsgId, NewText)
         {"Content-Type", "application/json"},
         {"Accept", "application/json"}
     ],
-    URL = "http://localhost:5000/internal_edit_group_message",
+    URL = dynamic_url(<<"/internal_edit_group_message">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -1204,9 +1193,9 @@ get_unread_counts(UserToken) when is_list(UserToken) ->
 get_unread_counts(UserToken) when is_binary(UserToken) ->
     ensure_inets_started(),
     QParams = <<"token=", UserToken/binary>>,
-    URL = <<"http://localhost:5000/internal_get_unread_counts?", QParams/binary>>,
+    URL = dynamic_url(<<"/internal_get_unread_counts?", QParams/binary>>),
     Headers = [{"Accept", "application/json"}],
-    case http_request(get, binary_to_list(URL), Headers, "") of
+    case http_request(get, URL, Headers, "") of
         {ok, Body} ->
             try
                 JsonMap = jsx:decode(Body, [return_maps]),
@@ -1238,25 +1227,19 @@ get_unread_counts(UserToken) when is_binary(UserToken) ->
 get_group_members(UserToken, GroupName) when is_list(UserToken), is_list(GroupName) ->
     get_group_members(list_to_binary(UserToken), list_to_binary(GroupName));
 
-get_group_members(UserToken, GroupName) 
-  when is_binary(UserToken), is_binary(GroupName) ->
+get_group_members(UserToken, GroupName) when is_binary(UserToken), is_binary(GroupName) ->
     ensure_inets_started(),
-
-    %% We'll do a GET request: /internal_get_group_members?token=...&group_name=...
-    QueryString = <<"token=", UserToken/binary, "&group_name=", GroupName/binary>>,
-    URL = <<"http://localhost:5000/internal_get_group_members?", QueryString/binary>>,
+    EncodedGroupName = list_to_binary(http_uri:encode(binary_to_list(GroupName))),
+    QueryString = <<"token=", UserToken/binary, "&group_name=", EncodedGroupName/binary>>,
+    URL = dynamic_url(<<"/internal_get_group_members?", QueryString/binary>>),
     Headers = [{"Accept", "application/json"}],
-
-    case http_request(get, binary_to_list(URL), Headers, "") of
+    case http_request(get, URL, Headers, "") of
         {ok, Body} ->
             try
                 JsonMap = jsx:decode(Body, [return_maps]),
                 case maps:get(<<"error">>, JsonMap, undefined) of
-                    undefined ->
-                        %% success: e.g. {"members": [...],"owner":"..."}
-                        {ok, JsonMap};
-                    ErrorMsg ->
-                        {error, ErrorMsg}
+                    undefined -> {ok, JsonMap};
+                    ErrorMsg -> {error, ErrorMsg}
                 end
             catch
                 _:Err ->
@@ -1267,6 +1250,7 @@ get_group_members(UserToken, GroupName)
             io:format("HTTP request to /internal_get_group_members failed: ~p~n", [Reason]),
             {error, Reason}
     end.
+
 
 
 %% Reassign group ownership and remove the old owner
@@ -1284,11 +1268,10 @@ reassign_group_owner_and_remove(GroupName, NewOwner) when is_binary(GroupName), 
                     },
                     JSON = jsx:encode(Payload),
                     Headers = [{"Content-Type", "application/json"}],
-                    URL = "http://localhost:5000/reassign_group_owner_and_remove",
+                    URL = dynamic_url(<<"/internal_reassign_group_owner_and_remove">>),
 
                     case http_request(post, URL, Headers, JSON) of
                         {ok, Body} ->
-                            %% Attempt to parse the response
                             try
                                 JsonMap = jsx:decode(Body, [return_maps]),
                                 Message = maps:get(<<"message">>, JsonMap, undefined),
@@ -1323,23 +1306,17 @@ search_users(UserToken, Query) when is_list(UserToken), is_list(Query) ->
     search_users(list_to_binary(UserToken), list_to_binary(Query));
 search_users(UserToken, Query) when is_binary(UserToken), is_binary(Query) ->
     ensure_inets_started(),
-    %% Construct query string
-    %% We'll call /internal_search_users?token=UserToken&query=Query
     QueryString = <<"token=", UserToken/binary, "&query=", Query/binary>>,
-    URL = <<"http://localhost:5000/internal_search_users?", QueryString/binary>>,
+    URL = dynamic_url(<<"/internal_search_users?", QueryString/binary>>),
     Headers = [{"Accept", "application/json"}],
 
-    case http_request(get, binary_to_list(URL), Headers, "") of
+    case http_request(get, URL, Headers, "") of
         {ok, Body} ->
             try
-                %% parse JSON body
                 JsonMap = jsx:decode(Body, [return_maps]),
-                %% if there's an error field
                 case maps:get(<<"error">>, JsonMap, undefined) of
                     undefined ->
-                        %% no error, so let's get "users"
                         Users = maps:get(<<"users">>, JsonMap, []),
-                        %% Users is a JSON array => lists of binaries
                         {ok, Users};
                     ErrorMsg ->
                         {error, ErrorMsg}
@@ -1357,7 +1334,7 @@ search_users(UserToken, Query) when is_binary(UserToken), is_binary(Query) ->
 
 %% Fetch nodes from the database
 fetch_nodes_from_database() ->
-    URL = "http://localhost:5000/get_active_nodes",
+    URL = dynamic_url(<<"/get_active_nodes">>),
     Headers = [{"Accept", "application/json"}],
     io:format("DEBUG: Sending GET request to URL: ~s~n", [URL]),
     case httpc:request(get, {URL, Headers}, [], []) of
@@ -1374,7 +1351,6 @@ fetch_nodes_from_database() ->
 
 %% Extract nodes from JSON response
 extract_nodes(JSON) when is_binary(JSON) ->
-    %% Correctly decode JSON without expecting a tuple
     JsonMap = jsx:decode(JSON),
     Nodes = case maps:get(<<"nodes">>, JsonMap, undefined) of
         undefined -> [];
@@ -1428,9 +1404,8 @@ register_node(Node) when is_atom(Node) ->
 %% Update node status in the database
 update_node_in_database(Node, Status) when is_atom(Node), is_atom(Status) ->
     ensure_inets_started(),
-    URL = "http://localhost:5000/register_node",
+    URL = dynamic_url(<<"/register_node">>),
     
-    %% Construct JSON payload using jsx
     Payload = #{
         <<"node_name">> => list_to_binary(atom_to_list(Node)),
         <<"status">> => list_to_binary(atom_to_list(Status))
@@ -1462,7 +1437,6 @@ propagate_registration(Node) when is_atom(Node) ->
 stop_node() ->
     Node = node(),
 
-    %% Unregister locally
     case ets:lookup(?ACTIVE_NODES, Node) of
         [{Node, _}] ->
             ets:delete(?ACTIVE_NODES, Node),
@@ -1480,7 +1454,7 @@ stop_node() ->
             {error, {404, _}} ->
                 io:format("Node ~p not found in the database, skipping database removal.~n", [Node]),
                 ok;
-            {error, DbReason} -> %% Use a distinct variable
+            {error, DbReason} ->
                 io:format("Failed to remove node ~p from the database: ~p~n", [Node, DbReason]),
                 {error, DbReason}
         end,
@@ -1491,12 +1465,11 @@ stop_node() ->
             ok ->
                 io:format("Node ~p stopped successfully.~n", [Node]),
                 ok;
-            {error, StopReason} -> %% Use another distinct variable
+            {error, StopReason} ->
                 io:format("Failed to stop node ~p: ~p~n", [Node, StopReason]),
                 {error, StopReason}
         end,
 
-    %% Return the result of the operation
     case {DatabaseResult, StopResult} of
         {ok, ok} ->
             ok;
@@ -1510,7 +1483,7 @@ remove_node_from_database(Node) when is_atom(Node) ->
     ensure_inets_started(),
     NodeName = atom_to_list(Node),
     EncodedNodeName = uri_string:encode(NodeName),
-    URL = "http://localhost:5000/remove_node/" ++ EncodedNodeName,
+    URL = dynamic_url(<<"/remove_node/", EncodedNodeName/binary>>),
     Headers = [{"Content-Type", "application/json"}],
     io:format("DEBUG: Sending DELETE request to URL: ~s~n", [URL]),
     case http_request(delete, URL, Headers, "") of
@@ -1572,7 +1545,6 @@ ensure_inets_started() ->
 %% Helper function to make HTTP requests
 http_request(Method, URL, Headers, Data) when is_atom(Method), is_list(URL), is_list(Headers) ->
     ensure_inets_started(),
-    %% Ensure Data is binary
     BinaryData = case Data of
         "" -> <<"">>;
         _ -> iolist_to_binary(Data)
@@ -1602,7 +1574,6 @@ http_request(Method, URL, Headers, Data) when is_atom(Method), is_list(URL), is_
             {ok, BinaryBody};
         {ok, {{_, Code, _}, _, Body}} when Code == 400 orelse Code == 401 orelse Code == 403 ->
             BinaryBody = convert_to_binary(Body),
-            %% Decode JSON error response
             case jsx:decode(BinaryBody) of
                 JsonMap when is_map(JsonMap) ->
                     ErrorMsg = maps:get(<<"error">>, JsonMap, <<"Unknown error.">>),
@@ -1627,75 +1598,19 @@ convert_to_binary(Body) when is_binary(Body) ->
 convert_to_binary(Body) when is_list(Body) ->
     list_to_binary(Body).
 
-%% Upload Profile Picture
-upload_profile_picture() ->
-    %% Retrieve the current user's token
-    case get_current_user_token() of
-        {ok, Token} ->
-            %% Call the Python script to get the Base64 image string
-            Command = "python upload_image_gui.py",
-            case os:cmd(Command) of
-                "" ->
-                    io:format("No file selected or error occurred.~n"),
-                    {error, "No file selected"};
-                Base64Image ->
-                    %% Clean up the Base64 string
-                    Base64Cleaned = string:trim(Base64Image),
-                    %% Convert list to binary
-                    Base64CleanedBinary = list_to_binary(Base64Cleaned),
-                    %% Debug: Print the Base64 string
-                    io:format("Base64 Cleaned Binary: ~s~n", [Base64CleanedBinary]),
-                    set_profile_picture(Token, Base64CleanedBinary)
-            end;
-        {error, Reason} ->
-            io:format("Failed to retrieve current user's token: ~s~n", [Reason]),
-            {error, Reason}
-    end.
-
-set_profile_picture(Token, Base64Image) ->
-    URL = "http://localhost:5000/set_profile_picture",
-    %% Encode the payload as JSON
-    PayloadMap = #{
-        <<"token">> => Token,
-        <<"image_data">> => Base64Image
-    },
-    Payload = jsx:encode(PayloadMap),
-    
-    %% Debug: Print the JSON payload being sent
-    io:format("Payload being sent: ~s~n", [Payload]),
-    
-    Headers = [{"Content-Type", "application/json"}],
-
-    %% Make HTTP POST request
-    case http_request(post, URL, Headers, Payload) of
-        {ok, Body} ->
-            JsonMap = jsx:decode(Body, [return_maps]),
-            case maps:get(<<"message">>, JsonMap, undefined) of
-                undefined ->
-                    io:format("Failed to update profile picture: ~s~n", [binary_to_list(Body)]),
-                    {error, "Failed to update profile picture."};
-                Message ->
-                    io:format("Profile picture updated successfully: ~s~n", [Message]),
-                    {ok, Message}
-            end;
-        {error, Reason} ->
-            io:format("Failed to update profile picture: ~p~n", [Reason]),
-            {error, Reason}
-    end.
 
 get_profile_picture(UserToken, Username) when is_list(UserToken), is_list(Username) ->
     get_profile_picture(list_to_binary(UserToken), list_to_binary(Username));
 get_profile_picture(UserToken, Username) when is_binary(UserToken), is_binary(Username) ->
     ensure_inets_started(),
 
-    %% Construct JSON request body
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"username">> => Username
     }),
 
     Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
-    URL = "http://localhost:5000/internal_get_profile_picture",
+    URL = dynamic_url(<<"/internal_get_profile_picture">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->
@@ -1723,14 +1638,13 @@ toggle_block_user(UserToken, OtherUser) when is_list(UserToken), is_list(OtherUs
 toggle_block_user(UserToken, OtherUser) when is_binary(UserToken), is_binary(OtherUser) ->
     ensure_inets_started(),
 
-    %% Construct the request body (JSON formatted)
     RequestBody = jsx:encode(#{
         <<"token">> => UserToken,
         <<"other_user">> => OtherUser
     }),
 
     Headers = [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
-    URL = "http://localhost:5000/internal_toggle_block_user",
+    URL = dynamic_url(<<"/internal_toggle_block_user">>),
 
     case http_request(post, URL, Headers, RequestBody) of
         {ok, Body} ->            
@@ -1751,3 +1665,16 @@ toggle_block_user(UserToken, OtherUser) when is_binary(UserToken), is_binary(Oth
             io:format("HTTP request failed: ~p~n", [Reason]),
             {error, Reason}
     end.
+
+
+get_server_url() ->
+    case os:getenv("SERVER_URL") of
+        false -> <<"http://localhost:5000">>;
+        URL   -> list_to_binary(URL)
+    end.
+
+dynamic_url(Path) when is_binary(Path) ->
+    Base = get_server_url(),
+    FinalBin = <<Base/binary, Path/binary>>,
+    %% Convert to list *here*:
+    binary_to_list(FinalBin).

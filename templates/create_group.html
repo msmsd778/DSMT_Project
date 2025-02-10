@@ -1,4 +1,3 @@
-<!-- templates/create_group.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -142,11 +141,9 @@
 <div class="container">
   <h2>Create a New Group</h2>
   
-  <!-- Group Name -->
   <label for="groupName">Group Name</label>
   <input type="text" id="groupName" placeholder="Enter group name..." />
   
-  <!-- Search Users -->
   <div class="search-container">
     <label for="userSearch">Add Members</label>
     <input
@@ -169,15 +166,12 @@
 </div>
 
 <script>
-  // ---------------------- TOKEN, USERNAME, NODE_NAME ----------------------
   let token = {{ token|tojson }};
   let username = {{ username|tojson }};
   let nodeName = {{ node_name|tojson }};
 
-  // ---------------------- SELECTED MEMBERS ----------------------
   let selectedMembers = [];
 
-  // ---------------------- SEARCH BAR LOGIC ----------------------
   const userSearchInput = document.getElementById('userSearch');
   const searchResultsDiv = document.getElementById('searchResults');
 
@@ -199,12 +193,10 @@
       return;
     }
 
-    // Call the Erlangified search function
     erlangifyUserSearch(query)
       .then(data => {
         if (data.error) {
           console.error("Search via Erlang error:", data.error);
-          // Optionally display an error or fallback
           searchResultsDiv.innerHTML = "<div style='padding: 0.5rem; color: red;'>Error searching users.</div>";
           searchResultsDiv.style.display = 'block';
           return;
@@ -224,12 +216,6 @@
       });
   }, 300));
 
-  /**
-   * Erlangified User Search Function
-   * Sends a POST request to /search_users_via_erlang with node_name, token, and query.
-   * @param {string} query - The search query string.
-   * @returns {Promise} - Resolves with the search results or rejects with an error.
-   */
   function erlangifyUserSearch(query) {
     const formData = new FormData();
     formData.append("node_name", nodeName);
@@ -246,7 +232,7 @@
   function showSearchResults(users, query) {
     searchResultsDiv.innerHTML = "";
     users.forEach(u => {
-      if (selectedMembers.includes(u)) return; // Prevent showing already selected users
+      if (selectedMembers.includes(u)) return;
   
       const div = document.createElement("div");
       const index = u.toLowerCase().indexOf(query.toLowerCase());
@@ -260,7 +246,7 @@
       }
       div.addEventListener("click", () => {
         selectUser(u);
-        userSearchInput.value = ''; // Clear search input
+        userSearchInput.value = '';
         searchResultsDiv.style.display = 'none';
         searchResultsDiv.innerHTML = '';
       });
@@ -269,9 +255,8 @@
     searchResultsDiv.style.display = 'block';
   }
 
-  // ---------------------- SELECT USER LOGIC ----------------------
   function selectUser(usernameToAdd) {
-    if (!selectedMembers.includes(usernameToAdd)) { // Avoid adding duplicates
+    if (!selectedMembers.includes(usernameToAdd)) {
       selectedMembers.push(usernameToAdd);
       renderSelectedUsers();
     }
@@ -296,7 +281,6 @@
     });
   }
 
-  // ---------------------- CREATE GROUP LOGIC ----------------------
   const createBtn = document.getElementById('createBtn');
   const groupNameInput = document.getElementById('groupName');
 
@@ -311,15 +295,12 @@
       return;
     }
 
-    // Prepare FormData for group creation via Erlang
     const formData = new FormData();
     formData.append("node_name", nodeName);
     formData.append("token", token);
     formData.append("group_name", groupName);
-    // Convert members array to a JSON string
     formData.append("members", JSON.stringify(selectedMembers));
 
-    // Send POST request to /create_group_via_erlang
     fetch("/create_group_via_erlang", {
       method: "POST",
       body: formData
@@ -330,7 +311,6 @@
         alert('Error creating group: ' + data.error);
       } else if (data.message) {
         alert(data.message);
-        // Redirect to the newly created group chat
         window.location.href = `/group_chat/${encodeURIComponent(groupName)}`;
       } else {
         alert('Unexpected response from server.');
@@ -342,20 +322,11 @@
     });
   });
 
-  // ---------------------- CANCEL BUTTON LOGIC ----------------------
   const cancelBtn = document.getElementById('cancelBtn');
   cancelBtn.addEventListener('click', () => {
     window.location.href = '/dashboard';
   });
 
-  // ---------------------- GLOBAL FUNCTIONS FOR ERLANGIFIED CREATE GROUP ----------------------
-  /**
-   * Extract error messages from Erlang's stdout.
-   * Reuses the existing extract_error_from_stdout function from Flask.
-   * This should be defined in your Flask app as it's used server-side.
-   * If needed client-side, consider defining a similar parser.
-   */
-  // Since parsing is handled server-side, no need for client-side extraction
 </script>
 </body>
 </html>

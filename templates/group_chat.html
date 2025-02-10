@@ -10,7 +10,6 @@
       margin: 0;
       padding: 0;
     }
-    /* Top bar with a back arrow */
     .top-bar {
       height: 50px; background: #fafafa; border-bottom: 1px solid #ddd;
       position: relative;
@@ -55,11 +54,11 @@
     .delete-group-btn:hover { background-color: #9b1e1e; }
 
     #ownerSelectContainer {
-      display: none; /* hidden until reassign */
+      display: none;
       align-items: center; gap: 0.5rem;
     }
     .owner-controls {
-      display: none; /* shown if isOwner */
+      display: none;
       flex-direction: column; align-items: flex-start;
       margin-bottom: 1rem; padding: 0 1rem;
     }
@@ -76,7 +75,6 @@
     }
     .suggestion-item:hover { background-color: #eee; }
 
-    /* Main chat area */
     .messages-wrapper {
       flex: 1; display: flex; flex-direction: column; overflow: hidden;
     }
@@ -88,11 +86,10 @@
       position: relative;
     }
 
-    /* Reply banner up top */
     #replyBanner {
       display: none;
       padding: 0.5rem;
-      background: #fafbfc;
+      background: rgb(184, 191, 198);
       border-left: 4px solid #ccc;
       margin: 0 1rem 1rem 1rem;
       position: relative;
@@ -101,18 +98,17 @@
       font-weight: bold; color: #333; margin-left: 5px;
     }
 
-    /* The message bubble */
     .message {
-      display: flex;           /* let us stack content and footer in one column */
+      display: flex;     
       flex-direction: column;
-      align-self: flex-start;  /* default to left side */
+      align-self: flex-start;
       padding: 0.8rem; margin-bottom: 0.5rem; border-radius: 6px;
       max-width: 70%; word-wrap: break-word;
       background-color: #fff;
       box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
     .message.mine {
-      align-self: flex-end;    /* push bubble to right side */
+      align-self: flex-end; 
       background-color: #e1ffc7;
       text-align: right;
     }
@@ -127,7 +123,7 @@
 
     .message-footer {
       display: flex; align-items: center;
-      justify-content: space-between; /* time left, buttons right */
+      justify-content: space-between;
       margin-top: 0.3rem;
     }
     .timestamp {
@@ -149,7 +145,6 @@
     .reply-btn { color: #888; }
     .reply-btn:hover { background-color: rgba(136,136,136,0.1); }
 
-    /* Input area */
     #sendForm {
       display: flex; padding: 0.8rem;
       border-top: 1px solid #ddd; background-color: #fafafa; align-items: center;
@@ -178,7 +173,6 @@
   </div>
 
   <div class="chat-container">
-    <!-- Header -->
     <div class="chat-header">
       <div class="chat-title">
         <h2>{{ group_name }}</h2>
@@ -197,26 +191,22 @@
       </div>
     </div>
 
-    <!-- Owner Controls: add/remove -->
     <div class="owner-controls" id="ownerControls">
       <label for="searchUserInput">Search Username:</label>
       <input type="text" id="searchUserInput" placeholder="Type to search..." autocomplete="off" />
       <div id="suggestions"></div>
     </div>
 
-    <!-- Reply Banner -->
     <div id="replyBanner">
       Replying to:
       <span id="replyPreviewText"></span>
       <button onclick="cancelReply()" style="margin-left:10px;cursor:pointer;">Cancel</button>
     </div>
 
-    <!-- Messages -->
     <div class="messages-wrapper">
       <div id="messages-area"></div>
     </div>
 
-    <!-- Send Form -->
     <form id="sendForm" onsubmit="return sendMessage();">
       <input type="text" id="msgInput" placeholder="Type a message..." required />
       <button type="submit" id="sendBtn">Send</button>
@@ -224,7 +214,6 @@
   </div>
 
   <script>
-    /* ----- Request Queue ----- */
     let requestQueue = [];
     let isProcessing = false;
     async function processQueue() {
@@ -241,7 +230,6 @@
       processQueue();
     }
 
-    /* ----- Globals ----- */
     let token = {{ session['token']|tojson }};
     let username = {{ username|tojson }};
     let groupName = {{ group_name|tojson }};
@@ -254,11 +242,9 @@
     let currentReplyMsgId = null;
     let currentReplyPreview = null;
 
-    /* Show/hide owner controls if I'm owner */
     const ownerControlsDiv = document.getElementById("ownerControls");
     if (isOwner) { ownerControlsDiv.style.display = "flex"; }
 
-    /* ----- REPLY LOGIC ----- */
     function startReply(msgId, msgText) {
       currentReplyMsgId = msgId;
       currentReplyPreview = msgText.slice(0, 80);
@@ -272,7 +258,6 @@
       document.getElementById("replyBanner").style.display = "none";
     }
 
-    /* ----- REFRESH TOKEN ----- */
     async function refreshToken() {
       if (refreshInProgress) return;
       refreshInProgress = true;
@@ -300,7 +285,6 @@
       }
     }
 
-    /* ----- SEARCH USERS (OWNER) ----- */
     const searchInput = document.getElementById("searchUserInput");
     const suggestionsDiv = document.getElementById("suggestions");
     searchInput.addEventListener("input", () => {
@@ -394,7 +378,6 @@
       queueRequest(operation);
     }
 
-    /* ----- GET/UPDATE GROUP MEMBERS ----- */
     function fetchGroupMembers() {
       const operation = async () => {
         try {
@@ -438,7 +421,6 @@
       ownerControlsDiv.style.display = isOwner ? "flex" : "none";
     }
 
-    /* ----- GET/RENDER GROUP MESSAGES ----- */
     function fetchGroupMessages() {
       const operation = async () => {
         try {
@@ -488,11 +470,9 @@
         bubble.classList.add("message");
         if (isMine) bubble.classList.add("mine");
 
-        // A content section
         const contentDiv = document.createElement("div");
         contentDiv.classList.add("message-content");
 
-        // If there's a reply preview
         if (msg.reply_to && msg.reply_preview) {
           const replyDiv = document.createElement("div");
           replyDiv.classList.add("reply-preview");
@@ -500,12 +480,10 @@
           contentDiv.appendChild(replyDiv);
         }
 
-        // Message text
         const textSpan = document.createElement("span");
         textSpan.textContent = msg.message;
         contentDiv.appendChild(textSpan);
 
-        // (edited)
         if (msg.edited) {
           const editedSpan = document.createElement("span");
           editedSpan.textContent = " (edited)";
@@ -516,7 +494,6 @@
 
         bubble.appendChild(contentDiv);
 
-        // Footer with timestamp + action buttons
         const footerDiv = document.createElement("div");
         footerDiv.classList.add("message-footer");
 
@@ -525,12 +502,10 @@
         tsSpan.textContent = formatTimestamp(msg.timestamp);
         footerDiv.appendChild(tsSpan);
 
-        // Action buttons
         const canEditOrDelete = (msg.sender === username) || (owner === username);
         const actionBtns = document.createElement("div");
         actionBtns.classList.add("action-buttons");
 
-        // Reply
         const replyBtn = document.createElement("button");
         replyBtn.classList.add("reply-btn");
         replyBtn.textContent = "↩";
@@ -539,13 +514,12 @@
         actionBtns.appendChild(replyBtn);
 
         if (canEditOrDelete) {
-          // Edit
           const editBtn = document.createElement("button");
           editBtn.classList.add("edit-btn");
           editBtn.textContent = "Edit";
           editBtn.onclick = () => editGroupMessage(msg._id, msg.message);
           actionBtns.appendChild(editBtn);
-          // Delete
+
           const delBtn = document.createElement("button");
           delBtn.classList.add("delete-btn");
           delBtn.textContent = "Delete";
@@ -556,7 +530,6 @@
         footerDiv.appendChild(actionBtns);
         bubble.appendChild(footerDiv);
 
-        // If it's mine, show read_by in tooltip
         if (isMine) {
           const othersWhoRead = (msg.read_by || []).filter(r => r !== username);
           bubble.title = (othersWhoRead.length > 0) ? `Seen by: ${othersWhoRead.join(", ")}` : "Not seen yet";
@@ -570,7 +543,6 @@
       }
     }
 
-    /* ----- SEND GROUP MESSAGE (with reply) ----- */
     function sendMessage() {
       const msgInput = document.getElementById("msgInput");
       const msgText = msgInput.value.trim();
@@ -604,7 +576,7 @@
             alert("Error sending group message: " + data.error);
           } else {
             msgInput.value = "";
-            cancelReply(); // reset the reply state
+            cancelReply();
             queueRequest(fetchGroupMessages);
           }
         } catch (err) {
@@ -613,10 +585,9 @@
         }
       };
       queueRequest(operation);
-      return false; // prevent default form submission
+      return false;
     }
 
-    /* ----- EDIT GROUP MESSAGE ----- */
     function editGroupMessage(messageId, oldText) {
       const newText = prompt("Edit your message:", oldText);
       if (!newText || newText.trim() === oldText) return;
@@ -654,7 +625,6 @@
       queueRequest(operation);
     }
 
-    /* ----- DELETE GROUP MESSAGE ----- */
     function deleteGroupMessage(messageId) {
       const confirmDelete = confirm("Are you sure you want to delete this message?");
       if (!confirmDelete) return;
@@ -691,7 +661,6 @@
       queueRequest(operation);
     }
 
-    /* ----- DELETE GROUP (owner) ----- */
     function deleteGroup() {
       const confirmDel = confirm("Are you sure you want to delete the entire group? This cannot be undone.");
       if (!confirmDel) return;
@@ -728,7 +697,6 @@
       queueRequest(operation);
     }
 
-    /* ----- LEAVE GROUP ----- */
     function leaveGroup() {
       if (!isOwner) {
         removeUserFromGroup_viaErlang(username);
@@ -823,7 +791,6 @@
       queueRequest(operation);
     }
 
-    /* ----- AUTO-REFRESH MESSAGES ----- */
     function setupAutoRefresh() {
       setInterval(() => {
         queueRequest(async () => {
@@ -833,7 +800,6 @@
       }, 6000);
     }
 
-    /* ----- ON LOAD ----- */
     document.addEventListener("DOMContentLoaded", () => {
       queueRequest(async () => {
         await fetchGroupMembers();

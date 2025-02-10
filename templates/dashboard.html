@@ -53,9 +53,6 @@
       font-size: 1rem;
       transition: background-color 0.3s ease;
     }
-    .action-buttons button:hover {
-      background-color: #0056b3;
-    }
     .tabs {
       display: flex;
       justify-content: center;
@@ -257,7 +254,11 @@
       <ul id="partnersList">
         {% for partner in chat_partners %}
           <li>
-            <a href="/chat/{{ partner }}">{{ partner }}</a>
+            {% if partner == username %}
+              <a href="/chat/{{ partner }}">Saved Messages</a>
+            {% else %}
+              <a href="/chat/{{ partner }}">{{ partner }}</a>
+            {% endif %}
             <span class="unread-count" id="unread_{{ partner }}"></span>
           </li>
         {% endfor %}
@@ -278,7 +279,6 @@
   </div>
 
   <script>
-    // ---------------------- TAB LOGIC ----------------------
     const privateTabButton = document.getElementById("privateTabButton");
     const groupTabButton   = document.getElementById("groupTabButton");
     const privateTabContent= document.getElementById("privateTabContent");
@@ -302,12 +302,10 @@
     privateTabButton.addEventListener("click", () => showTab("private"));
     groupTabButton.addEventListener("click", () => showTab("group"));
 
-    // ---------------------- TOKEN + USERNAME ----------------------
     let token    = {{ session['token']|tojson }};
     let username = {{ username|tojson }};
-    let nodeName = {{ node_name|tojson }};  // **NEW: Receive node_name from template**
+    let nodeName = {{ node_name|tojson }};
 
-    // ---------------------- REFRESH TOKEN IF NEEDED ----------------------
     let refreshInProgress = false;
     function refreshToken() {
       if (refreshInProgress) return;
@@ -333,7 +331,6 @@
       .finally(() => refreshInProgress = false);
     }
 
-    // ---------------------- FETCH CHAT PARTNERS ----------------------
     function fetchChatPartnersViaErlang() {
       const formData = new FormData();
       formData.append('node_name', nodeName);
@@ -353,33 +350,36 @@
       })
       .catch(err => {
         console.error("fetchChatPartnersViaErlang error:", err);
-        throw err; // rethrow to handle in chained calls
+        throw err;
       });
     }
 
     function updateChatPartnersUI(partners) {
       const partnersList = document.getElementById("partnersList");
       partnersList.innerHTML = "";
+  
       partners.forEach(partner => {
-        const li = document.createElement("li");
-        const a  = document.createElement("a");
-        a.href   = `/chat/${partner}`;
-        a.textContent = partner;
-
-        const unreadSpan = document.createElement("span");
-        unreadSpan.classList.add("unread-count");
-        unreadSpan.id = `unread_${partner}`;
-
-        li.appendChild(a);
-        li.appendChild(unreadSpan);
-        partnersList.appendChild(li);
+          const li = document.createElement("li");
+          const a  = document.createElement("a");
+          const displayName = (partner === username) ? "Saved Messages" : partner;
+  
+          a.href = `/chat/${partner}`;
+          a.textContent = displayName;
+  
+          const unreadSpan = document.createElement("span");
+          unreadSpan.classList.add("unread-count");
+          unreadSpan.id = `unread_${partner}`;
+  
+          li.appendChild(a);
+          li.appendChild(unreadSpan);
+          partnersList.appendChild(li);
       });
     }
+  
 
-    // ---------------------- FETCH USER GROUPS ----------------------
     function fetchUserGroupsViaErlang() {
       const formData = new FormData();
-      formData.append('node_name', nodeName);  // **UPDATED: Use dynamic nodeName**
+      formData.append('node_name', nodeName);
       formData.append('token', token);
 
       return fetch('/get_user_groups_via_erlang', {
@@ -392,12 +392,11 @@
           console.error("Error from Erlang-based route (user groups):", data.error);
           throw new Error(data.error);
         }
-        // The backend returns "group_names" in the JSON
         updateUserGroupsUI(data.group_names || []);
       })
       .catch(err => {
         console.error("fetchUserGroupsViaErlang error:", err);
-        throw err; // rethrow to handle in chained calls
+        throw err;
       });
     }
 
@@ -420,10 +419,9 @@
       });
     }
 
-    // ---------------------- FETCH UNREAD COUNTS ----------------------
     function fetchUnreadCountsViaErlang() {
       const formData = new FormData();
-      formData.append('node_name', nodeName);  // **UPDATED: Use dynamic nodeName**
+      formData.append('node_name', nodeName);
       formData.append('token', token);
 
       return fetch('/get_unread_counts_via_erlang', {
@@ -440,12 +438,11 @@
       })
       .catch(err => {
         console.error("fetchUnreadCountsViaErlang error:", err);
-        throw err; // rethrow to handle in chained calls
+        throw err;
       });
     }
 
     function updateUnreadCounters(privateUnread, groupUnread) {
-      // 1) Private Chats
       let totalPrivateUnread = 0;
       for (const partner in privateUnread) {
         const count = privateUnread[partner];
@@ -470,7 +467,6 @@
         privateUnreadTotal.classList.remove("show");
       }
 
-      // 2) Group Chats
       let totalGroupUnread = 0;
       for (const group in groupUnread) {
         const count = groupUnread[group];
@@ -496,7 +492,6 @@
       }
     }
 
-    // ---------------------- REAL-TIME SEARCH BAR LOGIC ----------------------
     const userSearchInput   = document.getElementById("userSearchInput");
     const userSearchResults = document.getElementById("userSearchResults");
 
@@ -510,15 +505,9 @@
       };
     }
 
-    /**
-     * Erlangified User Search Function
-     * Sends a POST request to /search_users_via_erlang with node_name, token, and query.
-     * @param {string} query - The search query string.
-     * @returns {Promise} - Resolves with the search results or rejects with an error.
-     */
     function erlangifyUserSearch(query) {
       const formData = new FormData();
-      formData.append("node_name", nodeName);  // **UPDATED: Use dynamic nodeName**
+      formData.append("node_name", nodeName);
       formData.append("token", token);
       formData.append("query", query);
 
@@ -537,12 +526,10 @@
         return;
       }
 
-      // Call the Erlangified search function
       erlangifyUserSearch(query)
         .then(data => {
           if (data.error) {
             console.error("Search via Erlang error:", data.error);
-            // Optionally display an error or fallback
             userSearchResults.innerHTML = "<div style='padding: 0.75rem 1rem; color: red;'>Error searching users.</div>";
             userSearchResults.classList.add("show");
             return;
@@ -591,9 +578,7 @@
       }
     });
 
-    // ---------------------- INITIAL FETCH + POLLING ----------------------
     function initialFetch() {
-      // Chain them so they run in order and handle any errors
       fetchChatPartnersViaErlang()
         .then(() => fetchUserGroupsViaErlang())
         .then(() => fetchUnreadCountsViaErlang())
@@ -603,7 +588,6 @@
     document.addEventListener("DOMContentLoaded", () => {
       initialFetch();
 
-      // Refresh the data every 5 seconds
       setInterval(() => {
         fetchChatPartnersViaErlang()
           .then(() => fetchUserGroupsViaErlang())

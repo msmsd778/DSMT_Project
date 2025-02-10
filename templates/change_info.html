@@ -1,4 +1,3 @@
-<!-- templates/change_info.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -67,9 +66,6 @@
       cursor: pointer;
       margin-top: 0.5rem;
     }
-    button:hover {
-      background-color: #0056b3;
-    }
     hr {
       margin: 1.5rem 0;
     }
@@ -83,7 +79,6 @@
 <body>
 
 <div class="top-bar">
-  <!-- back arrow to dashboard -->
   <button class="back-btn" onclick="window.location.href='/dashboard'">&larr;</button>
   <div class="title">Change Info</div>
 </div>
@@ -91,7 +86,6 @@
 <div class="container">
   <h2>Update Your Info</h2>
 
-  <!-- Change Password Section -->
   <div>
     <h3>Change Password</h3>
     <div class="form-group">
@@ -111,7 +105,6 @@
 
   <hr/>
 
-  <!-- Change Profile Picture -->
   <div>
     <h3>Change Profile Picture</h3>
     <div class="form-group">
@@ -145,7 +138,6 @@
       return;
     }
 
-    // We'll do a FormData POST => /change_password_via_erlang
     const formData = new FormData();
     formData.append("node_name", nodeName);
     formData.append("token", token);
@@ -186,7 +178,6 @@
     const reader = new FileReader();
     reader.onload = function(e) {
       let base64data = e.target.result;
-      // Remove the prefix: e.g., data:image/png;base64,
       base64data = base64data.split(",")[1].replace(/\s/g, "").trim();
   
       const formData = new FormData();
