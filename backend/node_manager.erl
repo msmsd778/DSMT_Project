@@ -336,7 +336,8 @@ logout_user(Username, Token) when is_binary(Username), is_binary(Token) ->
 
     Payload = iolist_to_binary(jsx:encode(#{<<"token">> => Token})),
     Headers = [{"Content-Type", "application/json"}],
-    case http_request(post, "http://localhost:5000/internal_logout", Headers, Payload) of
+    URL = dynamic_url(<<"/internal_logout">>),
+    case http_request(post, URL, Headers, Payload) of
         {ok, Body} ->
             io:format("Python logout response: ~s~n", [binary_to_list(Body)]);
         {error, Reason} ->
@@ -1667,14 +1668,21 @@ toggle_block_user(UserToken, OtherUser) when is_binary(UserToken), is_binary(Oth
     end.
 
 
-get_server_url() ->
-    case os:getenv("SERVER_URL") of
-        false -> <<"http://localhost:5000">>;
-        URL   -> list_to_binary(URL)
-    end.
-
 dynamic_url(Path) when is_binary(Path) ->
-    Base = get_server_url(),
-    FinalBin = <<Base/binary, Path/binary>>,
-    %% Convert to list *here*:
-    binary_to_list(FinalBin).
+    NodeStr = atom_to_list(node()),
+    HostParts = string:tokens(NodeStr, "@"),
+    Host = case HostParts of
+               [_Short, H] -> H;
+               _ -> "localhost"
+           end,
+    ResolvedIP = case inet:gethostbyname(Host) of
+                     {ok, {_, AddrList, _}} when is_list(AddrList), AddrList /= [] ->
+                         inet_parse:ntoa(hd(AddrList));
+                     _ ->
+                         "localhost"
+                 end,
+    Port = case os:getenv("PORT") of
+               false -> "5000";
+               P -> P
+           end,
+    lists:concat(["http://", ResolvedIP, ":", Port, binary_to_list(Path)]).
