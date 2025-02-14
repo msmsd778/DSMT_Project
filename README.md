@@ -121,14 +121,15 @@ Open a terminal and run:
 
   ```bash
   erl -sname edge -setcookie mycookie
+  node_manager:init().
 ```
 
 This initializes the Erlang node. The node manager (defined in node_manager.erl) will be started and will set up ETS tables and node registration.
 
 3. **Inter-Node Communication:**
 
--Erlang nodes communicate via RPC calls to ensure synchronization and shared session information.
--The Flask helper function call_erlang_function/3 constructs and executes commands that remotely invoke Erlang functions.
+Erlang nodes communicate via RPC calls to ensure synchronization and shared session information.
+The Flask helper function `call_erlang_function/3` constructs and executes commands that remotely invoke Erlang functions.
 
 ## Future Enhancements
 
