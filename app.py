@@ -61,10 +61,6 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp'}
 erlang_node_process = None
 
 
-def get_server_url():
-    return os.getenv("SERVER_URL", "http://localhost:5000")
-
-
 def validate_token(token):
     if not token:
         return None
@@ -165,7 +161,7 @@ def refresh_soon_expiring_tokens():
         logger.info(f"Refreshing token for user '{username}' that expires soon...")
 
         # Use the dynamic URL here.
-        refresh_url = get_server_url() + "/refresh_token"
+        refresh_url = url_for('refresh_token', _external=True)
         resp = requests.post(refresh_url, json={"token": old_token})
         if resp.status_code == 200:
             data = resp.json()
@@ -1387,7 +1383,7 @@ def internal_set_profile_picture():
         with open(file_path, "wb") as f:
             f.write(img_bytes)
 
-        image_url = f"{get_server_url()}/profile_pictures/{filename}"
+        image_url = url_for('serve_profile_picture', filename=filename, _external=True)
         users_collection.update_one({"username": username}, {"$set": {"profile_picture_url": image_url}})
         logger.info(f"Profile picture updated for user '{username}'.")
         return jsonify({"message": "Profile picture updated successfully.", "image_url": image_url}), 200
@@ -1497,7 +1493,7 @@ def register_via_erlang():
                             "extension": file_extension
                         }
                         # Use the dynamic URL here
-                        pic_url = get_server_url() + "/set_profile_picture_via_erlang"
+                        pic_url = url_for('set_profile_picture_via_erlang', _external=True)
                         resp = requests.post(pic_url, data=payload)
                         if resp.status_code == 200:
                             flash("Registration and profile picture upload successful!", "success")
@@ -2428,7 +2424,7 @@ def chat_user(other_user):
     other_user_display_status = ""
     try:
         # Use dynamic URL here:
-        url = get_server_url() + "/get_user_status_via_erlang"
+        url = url_for('get_user_status_via_erlang', _external=True)
         stat_resp = requests.post(url, json={"token": token, "node_name": node_name, "username": other_user})
         if stat_resp.status_code == 200:
             st_data = stat_resp.json()

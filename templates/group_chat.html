@@ -30,7 +30,16 @@
       display: flex; flex-direction: column;
       height: 80vh; overflow: hidden; position: relative;
     }
-
+    .message-sender {
+      font-weight: bold;
+      margin-bottom: 0.4rem;
+      font-size: 0.9rem;
+      color: #0056b3;
+      background-color: #e6f2ff;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      display: inline-block;
+    }
     .chat-header {
       display: flex; align-items: center;
       padding: 1rem; border-bottom: 1px solid #ddd;
@@ -463,27 +472,35 @@
       const container = document.getElementById("messages-area");
       const isAtBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) < 100;
       container.innerHTML = "";
-
+  
       messages.forEach(msg => {
         const isMine = (msg.sender === username);
         const bubble = document.createElement("div");
         bubble.classList.add("message");
         if (isMine) bubble.classList.add("mine");
-
+  
+        // If the message is not sent by the current user, show the sender name.
+        if (!isMine) {
+          const senderDiv = document.createElement("div");
+          senderDiv.classList.add("message-sender");
+          senderDiv.textContent = msg.sender;
+          bubble.appendChild(senderDiv);
+        }
+  
         const contentDiv = document.createElement("div");
         contentDiv.classList.add("message-content");
-
+  
         if (msg.reply_to && msg.reply_preview) {
           const replyDiv = document.createElement("div");
           replyDiv.classList.add("reply-preview");
           replyDiv.textContent = msg.reply_preview;
           contentDiv.appendChild(replyDiv);
         }
-
+  
         const textSpan = document.createElement("span");
         textSpan.textContent = msg.message;
         contentDiv.appendChild(textSpan);
-
+  
         if (msg.edited) {
           const editedSpan = document.createElement("span");
           editedSpan.textContent = " (edited)";
@@ -491,53 +508,53 @@
           editedSpan.style.fontSize = "0.8rem";
           contentDiv.appendChild(editedSpan);
         }
-
+  
         bubble.appendChild(contentDiv);
-
+  
         const footerDiv = document.createElement("div");
         footerDiv.classList.add("message-footer");
-
+  
         const tsSpan = document.createElement("span");
         tsSpan.classList.add("timestamp");
         tsSpan.textContent = formatTimestamp(msg.timestamp);
         footerDiv.appendChild(tsSpan);
-
+  
         const canEditOrDelete = (msg.sender === username) || (owner === username);
         const actionBtns = document.createElement("div");
         actionBtns.classList.add("action-buttons");
-
+  
         const replyBtn = document.createElement("button");
         replyBtn.classList.add("reply-btn");
         replyBtn.textContent = "↩";
         replyBtn.title = "Reply";
         replyBtn.onclick = () => startReply(msg._id, msg.message);
         actionBtns.appendChild(replyBtn);
-
+  
         if (canEditOrDelete) {
           const editBtn = document.createElement("button");
           editBtn.classList.add("edit-btn");
           editBtn.textContent = "Edit";
           editBtn.onclick = () => editGroupMessage(msg._id, msg.message);
           actionBtns.appendChild(editBtn);
-
+  
           const delBtn = document.createElement("button");
           delBtn.classList.add("delete-btn");
           delBtn.textContent = "Delete";
           delBtn.onclick = () => deleteGroupMessage(msg._id);
           actionBtns.appendChild(delBtn);
         }
-
+  
         footerDiv.appendChild(actionBtns);
         bubble.appendChild(footerDiv);
-
+  
         if (isMine) {
           const othersWhoRead = (msg.read_by || []).filter(r => r !== username);
           bubble.title = (othersWhoRead.length > 0) ? `Seen by: ${othersWhoRead.join(", ")}` : "Not seen yet";
         }
-
+  
         container.appendChild(bubble);
       });
-
+  
       if (isAtBottom) {
         container.scrollTop = container.scrollHeight;
       }

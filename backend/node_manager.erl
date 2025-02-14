@@ -767,7 +767,7 @@ create_group(UserToken, GroupName, Members) when is_binary(UserToken), is_binary
     Headers = [{"Content-Type", "application/x-www-form-urlencoded"}],
     URL = dynamic_url(<<"/internal_create_group">>),
 
-    case httpc:request(post, {binary_to_list(URL), Headers, "application/x-www-form-urlencoded", binary_to_list(FormData)}, [], []) of
+    case httpc:request(post, {URL, Headers, "application/x-www-form-urlencoded", binary_to_list(FormData)}, [], []) of
         {ok, {{_, 201, _}, _, Body}} ->
             handle_json_response(Body);
         
