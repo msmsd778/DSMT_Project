@@ -4,17 +4,6 @@ D-Messenger is a distributed messaging application designed to provide robust, r
 
 ---
 
-## Table of Contents
-
-- [Key Features](#key-features)
-- [System Architecture](#system-architecture)
-  - [Component Interactions](#component-interactions)
-- [Deployment](#deployment)
-  - [Deployment Steps](#deployment-steps)
-- [Future Enhancements](#future-enhancements)
-
----
-
 ## Key Features
 
 - **Real-Time Messaging:**  
@@ -123,34 +112,39 @@ D-Messenger is deployed on two virtual machines (VMs):
 
    ```bash
    python3 app.py
+   ```
 The Flask app listens on port 5000 and can be accessed via the VM's IP address (e.g., 10.2.1.37:5000).
 
-Start the Erlang Node:
+2. **Start the Erlang Node:**
 
 Open a terminal and run:
 
-bash
-Copy
-erl -sname edge -setcookie mycookie
+  ```bash
+  erl -sname edge -setcookie mycookie
+```
+
 This initializes the Erlang node. The node manager (defined in node_manager.erl) will be started and will set up ETS tables and node registration.
 
-Inter-Node Communication:
+3. **Inter-Node Communication:**
 
-Erlang nodes communicate via RPC calls to ensure synchronization and shared session information.
-The Flask helper function call_erlang_function/3 constructs and executes commands that remotely invoke Erlang functions.
-Future Enhancements
-Scalability and Performance:
+-Erlang nodes communicate via RPC calls to ensure synchronization and shared session information.
+-The Flask helper function call_erlang_function/3 constructs and executes commands that remotely invoke Erlang functions.
 
-Integrate Kubernetes for automated scaling.
-Introduce Redis for caching to reduce database load.
-Feature Expansion:
+## Future Enhancements
 
-Add support for multimedia messaging, file sharing, and voice/video chat capabilities.
-Security Improvements:
+- **Scalability & Performance:**
+  - Integrate container orchestration (e.g., Kubernetes) for automated scaling.
+  - Add a caching layer (e.g., Redis) to speed up frequent data access.
 
-Implement end-to-end encryption.
-Conduct regular security audits to enhance application security.
-Integration:
+- **Feature Expansion:**
+  - Support multimedia messaging (images, videos, audio).
+  - Enable file sharing, voice, and video chat.
 
-Integrate with third-party services.
-Extend support to mobile platforms using frameworks like React Native or Flutter.
+- **Security Improvements:**
+  - Implement end-to-end encryption for messages.
+  - Conduct regular security audits and penetration tests.
+
+- **Cross-Platform Support:**
+  - Develop native mobile applications using React Native or Flutter.
+  - Integrate third-party APIs to enhance functionality.
+
